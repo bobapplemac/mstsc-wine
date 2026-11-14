@@ -1,7 +1,7 @@
 From ab84cb415f14da55c5116a0fe28a67f173037a22 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Fri, 13 Nov 2026 23:07:05 -0500
-Subject: [PATCH 2/5] ntdll: Load resources from MUI satellite files.
+Subject: [PATCH 2/6] ntdll: Load resources from MUI satellite files.
 
 Language-neutral modules (those with a MUI resource configuration marking
 them as LN main files) keep localizable resources in

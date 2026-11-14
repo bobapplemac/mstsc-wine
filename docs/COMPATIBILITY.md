@@ -19,6 +19,8 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-011 | 2026-11-14 | + 0005, genuine fonts | `mstsc-wine run` (Xephyr :5) | `.mun` loaded (trace). **Banner image, Segoe UI title, monitor icon and Show Options chevron render**. Genuine fonts are used. "Show Options" label is truncated |
 | EXP-012 | 2026-11-14 | + 0005 | `regsvr32 /s mstscax.dll` | **exit 0**; MsTscAx CLSIDs/ProgIDs registered (REGISTRY from `.mun`) |
 | EXP-013 | 2026-11-14 | + 0005 | `cscript probe-mstscax.js` | `MsTscAx.MsTscAx.2` created, `Version=10.0.20348`. MsTscAx.MsTscAx, .11 and MsRdpClient fail 0x800a01ad |
+| EXP-014 | 2026-11-14 | + 0005 | `mstsc-wine run /v:rdp-test.invalid` | Aborts: unimplemented `sspicli.SspiPrepareForCredRead`. **Patch 0006** |
+| EXP-015 | 2026-11-14 | + 0006 | same | Connection attempt runs; mstscax loads d2d1/wined3d/audio/crypt32. Ends in **"An internal error has occurred", error code 0xa08**. Windows would report a name-lookup failure. Trace shows name resolution through `WSALookupServiceBeginW`/`NextW`, which are stubs in Wine (R-015). Expanded "See details" area repaints badly in Xephyr without a WM |
 
 ## Reproducible tests
 
@@ -28,6 +30,8 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | MUI fixture | `tests/static/mui-fixture/build.sh OUT` then `wine OUT/muitest.exe` | LN exe + satellite, Unicode string, checksum rejection |
 | devobj conformance | `wine build/wine-patched/dlls/devobj/tests/x86_64-windows/devobj_test.exe devobj` | DevObj create/GetClassDevs/enum/destroy |
 | `.mun` fixture | `wine OUT/mun/muntest.exe` (after copying `OUT/mun/SystemResources/*` to `C:\windows\SystemResources`) | patch 0005 |
+| secur32 conformance | `wine build/wine-patched/dlls/secur32/tests/x86_64-windows/secur32_test.exe secur32` | patch 0006 |
+| GUI driving | `tools/xclick.py :5 click X Y` / `type TEXT` / `key Return` (XTEST) | manual GUI steps in Xephyr |
 | user32 #2598 | `wine artifacts/user32-ordinals/ord2598.exe` | patch 0003 |
 | shcore conformance | `wine build/wine-patched/dlls/shcore/tests/x86_64-windows/shcore_test.exe shcore` | patch 0004 |
 | Launcher isolation | `tests/launch/test-launcher-isolation.sh` | F-013, N-003 |

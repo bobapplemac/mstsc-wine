@@ -38,5 +38,7 @@ else
 fi
 ST=$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/shcore/tests/x86_64-windows/shcore_test.exe
 [[ $mode == patched && -f $ST ]] && check "shcore: conformance (resource stream)" pass "$W" "$ST" shcore
+SC=$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/secur32/tests/x86_64-windows/secur32_test.exe
+[[ $mode == patched && -f $SC ]] && check "secur32: conformance (SspiPrepareForCredRead)" pass "$W" "$SC" secur32
 "$RT/bin/wineserver" -k 2>/dev/null
 echo "$fails unexpected result(s)"; exit $((fails > 0))

@@ -146,3 +146,22 @@ Win32u loads every font in `C:\windows\Fonts`, and the trace shows `segoeui.ttf`
 The launcher sets `MS Shell Dlg`→`Microsoft Sans Serif` and `MS Shell Dlg 2`→`Tahoma` as
 Windows does; Wine's default maps both to Tahoma. Open issue: the "Show Options" label is
 truncated to "Show Optio...", probably a text-metrics or DPI difference (H).
+
+## R-014 Saved credentials (V/I)
+Wine's advapi32 implements the Credential Manager (`CredReadW`/`CredWriteW`/`CredEnumerateW`).
+Entries go in the prefix registry (`HKCU\Software\Wine\Credential Manager`) with the password
+encrypted by a key that is also stored in the prefix. That is obfuscation, not real
+protection (I). mstsc's "Remember me" should therefore work without a custom store.
+Verify it once an endpoint exists. Don't add a plaintext JSON store; credentials must
+not live in plain files. If stronger protection is needed, back the advapi32 credential
+functions with libsecret (GNOME Keyring/KWallet) as a later, separately ADR'd change.
+
+## R-015 Connect fails with 0xa08 (I)
+`mstsc /v:rdp-test.invalid` gets as far as a connection attempt. It then shows "An internal
+error has occurred" (0xa08 / ext 0x0). Just before that, the trace shows
+`WSALookupServiceBeginW(…, 0xff0, …)` and `WSALookupServiceNextW`, which are stubs in Wine
+11.0 ("Stub!"). The RDP client resolves the host through the NS_* name-service API. With
+the stub, it gets an unexpected failure instead of "host not found" (I). Next step:
+implement `WSALookupServiceBegin/Next/End` for host-name queries (SVCID_INET_HOSTADDRBYNAME
+and similar) on top of getaddrinfo, with a ws2_32 conformance test. Confirm first with a
+call-site trace that the class GUID is the host-address one.

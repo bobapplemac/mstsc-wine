@@ -3,3 +3,4 @@
 0003-user32-Implement-ordinal-2598-as-a-no-op.patch
 0004-shcore-Implement-SHCreateStreamOnModuleResourceW.patch
 0005-ntdll-Load-main-resources-from-SystemResources-.mun-.patch
+0006-sspicli-Implement-SspiPrepareForCredRead.patch

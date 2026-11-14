@@ -8,7 +8,7 @@ _Last updated: 2026-11-14_
 |---|---|
 | M0 research inventory | **done**: binaries inspected and hashed, dependency closure analysed, required satellites identified |
 | M1 build foundation | **done**: pinned Wine 11.0 builds from source, both unmodified and patched; launcher; isolated prefix; benign PE runs |
-| M2 genuine MSTSC launch | **in progress**: genuine dialog renders with images and fonts (patches 0001–0005); mstscax registers and instantiates |
+| M2 genuine MSTSC launch | **in progress**: genuine dialog renders with images and fonts (patches 0001–0006); mstscax registers and instantiates; Connect reaches the connection attempt and fails with 0xa08 (R-015) |
 | M3–M8 | not started; M3 also needs a Windows RDP test endpoint |
 
 ## Completed
@@ -30,8 +30,9 @@ _Last updated: 2026-11-14_
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-1. Investigate the truncated "Show Options" label (text metrics or DPI).
-2. Click Connect against a `.invalid` host to exercise in-process mstscax activation and the error path.
+1. Connect: implement `WSALookupServiceBegin/Next/End` host-name resolution in ws2_32 (R-015),
+   then re-test `/v:rdp-test.invalid`. The expected result is a "can't find the computer" message.
+2. Investigate the truncated "Show Options" label (text metrics or DPI).
 3. Packaging: Wine Mono is not needed (R-012); keep `mscoree=d`. Decide on bundling wine-gecko offline only if Help/HTML is in scope.
 4. Import-gap backlog (R-006): `__C_specific_handler_noexcept`, Cred*, comctl32 #345, DirectUI/DUser.
-5. M3 needs the RDP test endpoint.
+5. M3 needs the RDP test endpoint. Saved credentials use Wine's Credential Manager (R-014).
