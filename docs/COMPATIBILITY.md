@@ -24,6 +24,8 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-016 | 2026-11-14 | + 0007 (NLA) | `/v:rdp-test.invalid` | NLA enumeration succeeds; still 0xa08. Also observed: `CredReadW` type 6 rejected → **patch 0008**; still 0xa08 |
 | EXP-017 | 2026-11-14 | + 0008 | winedbg breakpoints on the 7 `0xa08` sites; relay trace | Hit mstscax+0x102e43 after an internal call returned E_NOTIMPL. Source: msxml3 attribute `put_nodeTypedValue` stub → **patch 0009** |
 | EXP-018 | 2026-11-14 | + 0009 | `/v:rdp-test.invalid` | `GetAddrInfoW("rdp-test.invalid","3389")`. **Genuine "Remote Desktop can't find the computer" dialog** (expected Windows behaviour) |
+| EXP-019 | 2026-11-14 | 0001–0009 | `/v:127.0.0.1:3390` (nothing listening) | `connect` refused. Genuine "Remote Desktop can't connect to the remote computer for one of these reasons…" dialog |
+| EXP-020 | 2026-11-14 | 0001–0009 | `/v:127.0.0.1:3391`, local listener that reads then closes | Client sent a 19-byte TPKT/X.224 Connection Request (`03 00 00 13`…), the first RDP PDU from the genuine stack. Genuine "This computer can't connect to the remote computer" dialog. No unimplemented functions |
 
 ## Reproducible tests
 

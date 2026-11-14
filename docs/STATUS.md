@@ -30,11 +30,9 @@ _Last updated: 2026-11-14_
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-1. M3: a disposable Windows RDP endpoint and test account are needed to go past name resolution
-   (TLS/CredSSP, logon, graphics). Credentials are entered interactively only.
-2. Meanwhile: test Connect against a reachable host with nothing listening (connection refused) and
-   against a local TCP listener that closes immediately, to exercise the socket and TLS error paths
-   without real credentials.
+1. M3: the operator is setting up the endpoint (checklist: `docs/test-endpoint.md`). Next is TLS/CredSSP,
+   logon and graphics. The local error paths (refused, hang-up after X.224) already match Windows (EXP-019/020).
+2. (done) local error-path checks.
 3. Investigate the truncated "Show Options" label (text metrics or DPI).
 4. Packaging: Wine Mono is not needed (R-012); keep `mscoree=d`. Decide on bundling wine-gecko offline only if Help/HTML is in scope.
 5. Import-gap backlog (R-006).
