@@ -1,14 +1,14 @@
 # Project status
 
-_Last updated: 2026-11-13_
+_Last updated: 2026-11-14_
 
-## Current milestone: M1 complete → M2 (genuine MSTSC launch) blocked on operator input
+## Current milestone: M2 (genuine MSTSC launch): dialog renders; images and fonts pending
 
 | Milestone | State |
 |---|---|
 | M0 research inventory | **done**: binaries inspected and hashed, dependency closure analysed, required satellites identified |
 | M1 build foundation | **done**: pinned Wine 11.0 builds from source, both unmodified and patched; launcher; isolated prefix; benign PE runs |
-| M2 genuine MSTSC launch | **blocked**: needs `en-US\mstsc.exe.mui`, `en-US\mstscax.dll.mui` (operator) |
+| M2 genuine MSTSC launch | **in progress**: genuine connection dialog renders (patches 0001–0004); needs `.mun` images + fonts |
 | M3–M8 | not started; M3 also needs a Windows RDP test endpoint |
 
 ## Completed
@@ -26,19 +26,18 @@ _Last updated: 2026-11-13_
 - Tests: regression A/B suite, launcher isolation test (all green).
 
 ## Blockers (need human input)
-1. **MUI satellites** from the same Server 2022 build: `C:\Windows\System32\en-US\mstsc.exe.mui`
-   and `en-US\mstscax.dll.mui` (required). Also `dui70.dll` and `duser.dll`, plus their
-   `en-US` `.mui` files if present (recommended). See `docs/binary-acquisition.md`.
-2. **RDP test endpoint** for M3+: a disposable Windows 10/11 or Server host and a test
-   account, supplied by the operator. Never production.
-3. Primary target environment (KDE Plasma Wayland, 125%) is not this machine. Acceptance on
-   it must happen on that machine later.
+1. **Images:** `C:\Windows\SystemResources\mstsc.exe.mun` and `mstscax.dll.mun` (if present).
+   A Wine `.mun` loader change will follow (R-010).
+2. **Fonts** from `C:\Windows\Fonts`: segoeui.ttf, segoeuib.ttf, segoeuii.ttf, segoeuiz.ttf,
+   seguisb.ttf, segoeuil.ttf, seguisym.ttf, segmdl2.ttf, tahoma.ttf, tahomabd.ttf, micross.ttf (R-011).
+3. **RDP test endpoint** for M3+: a disposable Windows host and a test account. Never production.
+4. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
-## Next actions (once satellites arrive)
-1. `mstsc-wine import <folder> && mstsc-wine init`, then check that patch 0002 accepts the real
-   satellites (checksum assumption, ADR-0005 open question a).
-2. `regsvr32 mstscax.dll`, then `cscript tests/launch/probe-mstscax.js`.
-3. Launch mstsc and record the first failure. Then work through the import-gap backlog
-   (RESEARCH R-006) in the order it is actually hit: `__C_specific_handler_noexcept`,
-   shlwapi #628, Cred* stubs, DirectUI.
-4. Install the optional build deps (Wayland, D-Bus, GStreamer) for later milestones.
+## Next actions
+1. Import the `.mun` and font files (the launcher maps `Fonts/` and `SystemResources/`
+   subfolders of the import folder into `C:\windows`). Implement `.mun` resource
+   redirection with a fixture, following the ADR-0005 pattern.
+2. Set Windows-equivalent FontSubstitutes (MS Shell Dlg → Microsoft Sans Serif,
+   MS Shell Dlg 2 → Tahoma) once the genuine fonts are present.
+3. Click Connect against a `.invalid` host to exercise in-process mstscax activation.
+4. Import-gap backlog (R-006): `__C_specific_handler_noexcept`, Cred*, comctl32 #345, DirectUI/DUser.

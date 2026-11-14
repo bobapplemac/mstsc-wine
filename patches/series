@@ -1,2 +1,4 @@
 0001-devobj-Add-stub-dll-forwarding-to-setupapi.patch
 0002-ntdll-Load-resources-from-MUI-satellite-files.patch
+0003-user32-Implement-ordinal-2598-as-a-no-op.patch
+0004-shcore-Implement-SHCreateStreamOnModuleResourceW.patch

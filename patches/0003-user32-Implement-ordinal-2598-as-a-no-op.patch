@@ -1,0 +1,56 @@
+From 28650e50cd2805aa19be1fd718abe33924bb5fd0 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sat, 14 Nov 2026 08:10:12 -0500
+Subject: [PATCH 3/4] user32: Implement ordinal 2598 as a no-op.
+
+mstsc.exe 10.0.20348 looks up user32 ordinal 2598 with GetProcAddress after
+making the process per-monitor DPI aware, calls it with no arguments and
+ignores the result. The unimplemented stub aborts the process at startup.
+
+The Windows name is believed to be EnablePerMonitorDialogScaling; this is
+inferred from the call site and not confirmed.
+---
+ dlls/user32/sysparams.c | 13 +++++++++++++
+ dlls/user32/user32.spec |  2 +-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/user32/sysparams.c b/dlls/user32/sysparams.c
+index a7ce2e5..5285f6d 100644
+--- a/dlls/user32/sysparams.c
++++ b/dlls/user32/sysparams.c
+@@ -790,6 +790,19 @@ BOOL WINAPI EnableNonClientDpiScaling( HWND hwnd )
+     return FALSE;
+ }
+ 
++/**********************************************************************
++ *              EnablePerMonitorDialogScaling   (USER32.2598)
++ *
++ * Undocumented, no parameters.  Callers such as mstsc.exe invoke it right
++ * after switching the process to per-monitor DPI awareness and ignore the
++ * result.  Dialog DPI scaling is not implemented, so this does nothing.
++ */
++BOOL WINAPI EnablePerMonitorDialogScaling(void)
++{
++    FIXME( "stub\n" );
++    return TRUE;
++}
++
+ /***********************************************************************
+  *              GetDpiForSystem   (USER32.@)
+  */
+diff --git a/dlls/user32/user32.spec b/dlls/user32/user32.spec
+index 0645792..16a4c6c 100644
+--- a/dlls/user32/user32.spec
++++ b/dlls/user32/user32.spec
+@@ -109,7 +109,7 @@
+ 2595 stub -noname SetProcessInteractionFlags  # NtUserSetProcessInteractionFlags
+ 
+ 2597 stub -noname CitSetInfo  # NtUserCitSetInfo
+-2598 stub @
++2598 stdcall -noname EnablePerMonitorDialogScaling()
+ 2599 stub @
+ 2600 stub -noname ForceEnableNumpadTranslation  # NtUserForceEnableNumpadTranslation
+ 
+-- 
+2.47.3
+

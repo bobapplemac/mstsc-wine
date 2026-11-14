@@ -1,7 +1,7 @@
-From d8040a846aa681274fcd7721719398887fb64db5 Mon Sep 17 00:00:00 2001
+From ab84cb415f14da55c5116a0fe28a67f173037a22 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Fri, 13 Nov 2026 23:07:05 -0500
-Subject: [PATCH 2/2] ntdll: Load resources from MUI satellite files.
+Subject: [PATCH 2/4] ntdll: Load resources from MUI satellite files.
 
 Language-neutral modules (those with a MUI resource configuration marking
 them as LN main files) keep localizable resources in
@@ -15,14 +15,14 @@ satellite mapping.
 Wine-Bug: https://bugs.winehq.org/show_bug.cgi?id=43670
 Wine-Bug: https://bugs.winehq.org/show_bug.cgi?id=52215
 ---
- dlls/ntdll/resource.c | 336 +++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 335 insertions(+), 1 deletion(-)
+ dlls/ntdll/resource.c | 343 +++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 342 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/ntdll/resource.c b/dlls/ntdll/resource.c
-index 3de932e..6fd305b 100644
+index 3de932e..0f88e79 100644
 --- a/dlls/ntdll/resource.c
 +++ b/dlls/ntdll/resource.c
-@@ -251,6 +251,323 @@ done:
+@@ -251,6 +251,330 @@ done:
  }
  
  
@@ -153,7 +153,14 @@ index 3de932e..6fd305b 100644
 +    *size = 0;
 +    status = NtMapViewOfSection( mapping, NtCurrentProcess(), &base, 0, 0, NULL, size, ViewShare, 0, PAGE_READONLY );
 +    NtClose( mapping );
-+    if (status && status != STATUS_IMAGE_NOT_AT_BASE) return NULL;
++    /* Satellites are commonly resource-only i386 images, also for 64-bit modules;
++     * mapping those returns an informational status such as
++     * STATUS_IMAGE_MACHINE_TYPE_MISMATCH, which is fine for resource access. */
++    if (status < 0)
++    {
++        WARN( "failed to map %s: %#lx\n", debugstr_w(path), status );
++        return NULL;
++    }
 +    return base;
 +}
 +
@@ -346,7 +353,7 @@ index 3de932e..6fd305b 100644
  /**********************************************************************
   *	LdrFindResourceDirectory_U  (NTDLL.@)
   */
-@@ -296,6 +613,11 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResource_U( HMODULE hmod, const LDR_RES
+@@ -296,6 +620,11 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResource_U( HMODULE hmod, const LDR_RES
                       level > 2 ? info->Language : 0, level );
  
          status = find_entry( hmod, info, level, &res, FALSE );
@@ -358,7 +365,7 @@ index 3de932e..6fd305b 100644
          if (status == STATUS_SUCCESS) *entry = res;
      }
      __EXCEPT_PAGE_FAULT
-@@ -328,7 +650,19 @@ static inline NTSTATUS access_resource( HMODULE hmod, const IMAGE_RESOURCE_DATA_
+@@ -328,7 +657,19 @@ static inline NTSTATUS access_resource( HMODULE hmod, const IMAGE_RESOURCE_DATA_
          {
              if (ptr)
              {

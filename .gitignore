@@ -14,3 +14,7 @@
 /wine-src/
 __pycache__/
 /wine-patched/
+/system32/
+*.mun
+*.ttf
+*.ttc

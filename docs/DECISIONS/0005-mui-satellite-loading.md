@@ -30,3 +30,13 @@
   consulted (Wine stubs them).
 - Upstreamability: good candidate for WineHQ bug 43670 once (a) is verified and
   a conformance test that builds its own satellite is added to `dlls/kernel32/tests`.
+
+## Update 2026-11-14
+- Open question (a) is **answered (V)**: for mstsc.exe, mstscax.dll and dui70.dll the
+  satellite `checksum` equals the main file's.
+- The real satellites are **i386 resource-only images** even for x64 modules. Mapping one
+  with `SEC_IMAGE` in a 64-bit process returns the informational
+  `STATUS_IMAGE_MACHINE_TYPE_MISMATCH`, which the first version wrongly treated as
+  failure. The patch now accepts every non-negative status, as kernelbase's
+  `MapViewOfFile` does. The fixture gained an i386 satellite (`i386/`), built with
+  windres plus `ld -m i386pe` and a minimal linker script.

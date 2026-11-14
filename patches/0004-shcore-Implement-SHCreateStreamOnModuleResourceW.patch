@@ -1,0 +1,186 @@
+From 95646c04646fe604608dd4911f9f440a033f563f Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sat, 14 Nov 2026 08:12:44 -0500
+Subject: [PATCH 4/4] shcore: Implement SHCreateStreamOnModuleResourceW.
+
+Also export it from shlwapi as ordinal 628, which mstsc.exe imports to
+load "Image" resources for its connection dialog. Without it the import
+is unresolved and mstsc passes a NULL stream to WIC and crashes.
+---
+ dlls/shcore/main.c            | 28 +++++++++++++++++++++
+ dlls/shcore/shcore.spec       |  2 +-
+ dlls/shcore/tests/Makefile.in |  1 +
+ dlls/shcore/tests/resource.rc | 22 ++++++++++++++++
+ dlls/shcore/tests/shcore.c    | 47 +++++++++++++++++++++++++++++++++++
+ dlls/shlwapi/shlwapi.spec     |  1 +
+ 6 files changed, 100 insertions(+), 1 deletion(-)
+ create mode 100644 dlls/shcore/tests/resource.rc
+
+diff --git a/dlls/shcore/main.c b/dlls/shcore/main.c
+index 426a842..b19e092 100644
+--- a/dlls/shcore/main.c
++++ b/dlls/shcore/main.c
+@@ -878,6 +878,34 @@ IStream * WINAPI SHCreateMemStream(const BYTE *data, UINT data_len)
+     return stream ? &stream->IStream_iface : NULL;
+ }
+ 
++/*************************************************************************
++ * SHCreateStreamOnModuleResourceW   [SHCORE.109]
++ *
++ * Create a read-only memory IStream on a copy of a module resource.
++ */
++HRESULT WINAPI SHCreateStreamOnModuleResourceW(HMODULE module, const WCHAR *name, const WCHAR *type,
++                                               IStream **stream)
++{
++    HRSRC res;
++    HGLOBAL mem;
++    const BYTE *data;
++    DWORD size;
++
++    TRACE("(%p, %s, %s, %p)\n", module, debugstr_w(name), debugstr_w(type), stream);
++
++    if (!stream) return E_INVALIDARG;
++    *stream = NULL;
++
++    if (!(res = FindResourceW(module, name, type)))
++        return HRESULT_FROM_WIN32(GetLastError());
++    size = SizeofResource(module, res);
++    if (!(mem = LoadResource(module, res)) || !(data = LockResource(mem)))
++        return HRESULT_FROM_WIN32(GetLastError());
++    if (!(*stream = SHCreateMemStream(data, size)))
++        return E_OUTOFMEMORY;
++    return S_OK;
++}
++
+ static ULONG WINAPI filestream_Release(IStream *iface)
+ {
+     struct shstream *stream = impl_from_IStream(iface);
+diff --git a/dlls/shcore/shcore.spec b/dlls/shcore/shcore.spec
+index 102e301..55aa847 100644
+--- a/dlls/shcore/shcore.spec
++++ b/dlls/shcore/shcore.spec
+@@ -105,7 +105,7 @@
+ 106 stub -noname StreamCopyTo
+ 107 stub -noname IStream_ReadStrLong
+ 108 stub -noname IStream_WriteStrLong
+-109 stub -noname SHCreateStreamOnModuleResourceW
++109 stdcall -noname SHCreateStreamOnModuleResourceW(ptr wstr wstr ptr)
+ 110 stub -noname SHCreateStreamOnDllResourceW
+ 111 stub -noname CreateWritableSharedMemoryStream
+ 115 stub -noname CreateRandomAccessStreamOnFileWithOptions
+diff --git a/dlls/shcore/tests/Makefile.in b/dlls/shcore/tests/Makefile.in
+index 2b7eaa6..6b47ef0 100644
+--- a/dlls/shcore/tests/Makefile.in
++++ b/dlls/shcore/tests/Makefile.in
+@@ -2,4 +2,5 @@ TESTDLL = shcore.dll
+ IMPORTS = advapi32
+ 
+ SOURCES = \
++	resource.rc \
+ 	shcore.c
+diff --git a/dlls/shcore/tests/resource.rc b/dlls/shcore/tests/resource.rc
+new file mode 100644
+index 0000000..46090dd
+--- /dev/null
++++ b/dlls/shcore/tests/resource.rc
+@@ -0,0 +1,22 @@
++/*
++ * Resources for shcore tests
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include "windef.h"
++
++/* @makedep: resource.rc */
++1 RCDATA { "shcore resource stream test" }
+diff --git a/dlls/shcore/tests/shcore.c b/dlls/shcore/tests/shcore.c
+index 539c2e5..2a20de1 100644
+--- a/dlls/shcore/tests/shcore.c
++++ b/dlls/shcore/tests/shcore.c
+@@ -777,6 +777,52 @@ static void test_stream_size(void)
+     DeleteFileA(filename);
+ }
+ 
++static void test_SHCreateStreamOnModuleResourceW(HMODULE hshcore)
++{
++    HRESULT (WINAPI *pSHCreateStreamOnModuleResourceW)(HMODULE, const WCHAR *, const WCHAR *, IStream **);
++    IStream *stream;
++    STATSTG stat;
++    DWORD size;
++    HRSRC res;
++    const void *data;
++    char buf[128];
++    HMODULE module;
++    HRESULT hr;
++    ULONG read;
++
++    pSHCreateStreamOnModuleResourceW = (void *)GetProcAddress(hshcore, MAKEINTRESOURCEA(109));
++    if (!pSHCreateStreamOnModuleResourceW)
++    {
++        win_skip("SHCreateStreamOnModuleResourceW is not available.\n");
++        return;
++    }
++
++    module = GetModuleHandleW(NULL);
++    res = FindResourceW(module, MAKEINTRESOURCEW(1), (const WCHAR *)RT_RCDATA);
++    ok(res != NULL, "no test resource\n");
++    size = SizeofResource(module, res);
++    ok(size > 0 && size <= sizeof(buf), "got resource size %lu\n", size);
++    data = LockResource(LoadResource(module, res));
++
++    stream = (IStream *)0xdeadbeef;
++    hr = pSHCreateStreamOnModuleResourceW(module, MAKEINTRESOURCEW(1), (const WCHAR *)RT_RCDATA, &stream);
++    ok(hr == S_OK, "got %#lx\n", hr);
++    ok(stream != NULL && stream != (IStream *)0xdeadbeef, "got %p\n", stream);
++    hr = IStream_Stat(stream, &stat, STATFLAG_NONAME);
++    ok(hr == S_OK, "got %#lx\n", hr);
++    ok(stat.cbSize.QuadPart == size, "got size %s, expected %lu\n", wine_dbgstr_longlong(stat.cbSize.QuadPart), size);
++    memset(buf, 0, sizeof(buf));
++    hr = IStream_Read(stream, buf, sizeof(buf), &read);
++    ok(hr == S_OK || hr == S_FALSE, "got %#lx\n", hr);
++    ok(read == size && !memcmp(buf, data, size), "got %lu bytes %s\n", read, debugstr_an(buf, read));
++    IStream_Release(stream);
++
++    stream = (IStream *)0xdeadbeef;
++    hr = pSHCreateStreamOnModuleResourceW(module, L"NoSuchResource", L"NoSuchType", &stream);
++    ok(FAILED(hr), "got %#lx\n", hr);
++    ok(stream == NULL, "got %p\n", stream);
++}
++
+ START_TEST(shcore)
+ {
+     HMODULE hshcore = LoadLibraryA("shcore.dll");
+@@ -802,4 +848,5 @@ START_TEST(shcore)
+     test_SHRegGetPath();
+     test_SHCopyKey();
+     test_stream_size();
++    test_SHCreateStreamOnModuleResourceW(hshcore);
+ }
+diff --git a/dlls/shlwapi/shlwapi.spec b/dlls/shlwapi/shlwapi.spec
+index 853a938..8927006 100644
+--- a/dlls/shlwapi/shlwapi.spec
++++ b/dlls/shlwapi/shlwapi.spec
+@@ -545,6 +545,7 @@
+ 549 stdcall -noname SHCoCreateInstanceAC(ptr ptr long ptr ptr)
+ 550 stub -noname GetTemplateInfoFromHandle
+ 551 stub -noname IShellFolder_CompareIDs
++628 stdcall -noname SHCreateStreamOnModuleResourceW(ptr wstr wstr ptr) shcore.#109
+ 
+ @ stdcall AssocCreate(int128 ptr ptr)
+ @ stdcall AssocGetPerceivedType(wstr ptr ptr ptr)
+-- 
+2.47.3
+

@@ -97,3 +97,25 @@ API sets: all `api-ms-win-*` imports resolve through Wine's `apisetschema`
 - Bug 25343 (RDP 7 client fails, CLOSED FIXED in 1.7.19, 2014). Historical crashes
   in secur32 `DecryptMessage` with TLS (2011) and a stack overflow on exit (2014).
   Suggests the old mstsc ran on Wine; the modern client is far larger.
+
+## R-008 Supplied component set, 2026-11-14 (V)
+Folder `system32/` (gitignored) holds mstsc.exe and mstscax.dll (20348.5866), dui70.dll
+(20348.4893), devobj.dll (20348.2849), and en-US `.mui` for mstsc, mstscax and dui70
+(i386 resource-only). duser.dll was not supplied; it is delay-loaded by dui70 and has
+not been needed yet. Native devobj.dll is kept in the store but not installed (ADR-0004).
+
+## R-009 mstscax self-registration (V/I)
+No file contains a `REGISTRY` resource (V). On Windows, servicing manifests register
+system COM classes, so `DllRegisterServer` probably fails there too (I). mstsc.exe got to
+its connection dialog without any COM registration (V). If ActiveX hosting needs it later,
+write the CLSID/TypeLib keys from the TYPELIB resource rather than patch around this.
+
+## R-010 Images live outside the PE+MUI pair (H)
+mstsc calls `SHCreateStreamOnModuleResourceW(mstsc.exe, #690/#675/#676, L"Image")`, and
+neither mstsc.exe nor mstsc.exe.mui has an `IMAGE` type. Windows 10 1903+ loads such
+resources from `%windir%\SystemResources\<name>.mun`. Wine has no `.mun` redirection, so
+a loader change like ADR-0005 will be needed once the file is available to test.
+
+## R-011 Fonts (V)
+The dialog templates in mstsc.exe.mui use `MS Shell Dlg` 8pt (25 dialogs) and
+`Segoe UI` 9/10pt (6). Neither font is in the prefix or on the host (`fc-match` → Cantarell).
