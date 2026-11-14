@@ -9,3 +9,7 @@
 0009-msxml3-Implement-IXMLDOMAttribute-put_nodeTypedValue.patch
 0010-secur32-Tolerate-server-certificate-key-usage-violat.patch
 0011-secur32-Support-SECPKG_ATTR_PACKAGE_INFO-in-Schannel.patch
+0012-include-Add-CredSSP-packed-logon-and-credential-prot.patch
+0013-advapi32-Implement-CredProtectW-CredUnprotectW-and-C.patch
+0014-credui-Implement-CredUIPromptForWindowsCredentialsW-.patch
+0015-secur32-Add-a-CredSSP-client-security-package.patch

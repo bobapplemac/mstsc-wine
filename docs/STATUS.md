@@ -9,7 +9,7 @@ _Last updated: 2026-11-14_
 | M0 research inventory | **done**: binaries inspected and hashed, dependency closure analysed, required satellites identified |
 | M1 build foundation | **done**: pinned Wine 11.0 builds from source, both unmodified and patched; launcher; isolated prefix; benign PE runs |
 | M2 genuine MSTSC launch | **done**: genuine dialog renders with images and fonts (patches 0001–0009); mstscax registers and instantiates; Connect resolves the target and reports unreachable hosts the way Windows does |
-| M3 connection | **in progress**: TLS session to a Windows host works (EXP-023); certificate warning verified (EXP-026, ADR-0015); NLA/CredSSP, NTLM pending |
+| M3 connection | **in progress**: TLS session to a Windows host works (EXP-023); certificate warning verified (EXP-026); **NLA/CredSSP with NTLM works against a real Windows host** (EXP-030/031, ADR-0016–0018) |
 | M4–M8 | not started |
 
 ## Completed
@@ -24,15 +24,15 @@ _Last updated: 2026-11-14_
   exports), `mui-config.py`, `xshot.py`, `build-wine.sh`.
 - Launcher `launcher/mstsc-wine`: init/import/run/exec/doctor/--version, hash-verified
   component store, private prefix, redacted deterministic logs.
-- Tests: regression A/B suite, launcher isolation test, server-certificate warning test (`tests/security/cert-prompt/run.sh`).
+- Tests: regression A/B suite (incl. CredSSP client), launcher isolation test, server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end (`tests/security/credssp/run.sh`; needs `python3-pyspnego`).
 
 ## Blockers (need human input)
-1. A test host with **NLA enforced** (and later a domain-joined one) for CredSSP work. The current host is available (not domain-joined, NLA not enforced, operator signs in interactively).
+1. A domain-joined test host (Kerberos) when available. The current host covers NLA with NTLM.
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-1. CredSSP/NLA in Wine ([MS-CSSP] over Schannel + NTLM via `ntlm_auth`); test with NLA enforced on the server.
-2. Certificate prompt with a CA-trusted certificate (expect no prompt); remove ADR-0015 seeding once CredSSP lands.
+1. NLA follow-ups: "Remember my password" (`CredWriteDomainCredentialsW`), Kerberos/domain host, wrong-password re-prompt UX, server with NLA *required*.
+2. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
 3. Connection-bar restore/maximize leaves the window unusable (EXP-024): reproduce under a real WM.
 4. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
 5. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.

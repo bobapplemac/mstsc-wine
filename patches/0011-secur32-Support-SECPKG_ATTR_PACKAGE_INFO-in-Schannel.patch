@@ -1,7 +1,7 @@
 From c318443e1210299bfdb2df2ecf856a621235ba7c Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:45:21 -0500
-Subject: [PATCH 11/11] secur32: Support SECPKG_ATTR_PACKAGE_INFO in Schannel
+Subject: [PATCH 11/15] secur32: Support SECPKG_ATTR_PACKAGE_INFO in Schannel
  QueryContextAttributes.
 
 Return the Schannel package information, allocated as by

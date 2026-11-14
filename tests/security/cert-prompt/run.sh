@@ -1,9 +1,9 @@
 #!/bin/bash
-# Server-certificate warning test (ADR-0015), offline against fake-rdp-tls.py.
+# Server-certificate warning test (ADR-0015, ADR-0019), offline against fake-rdp-tls.py.
 #   run.sh [SOURCE_PREFIX]   (default: artifacts/prefixes/mstsc-patched; needs mstsc installed)
 # Works on a throwaway copy of the prefix. Needs Xephyr (tests/lib/xephyr.sh).
 #  1. default settings + untrusted cert: mstsc must not continue past TLS (it warns)
-#  2. Default.rdp saved with level 0 by the user: the launcher must not override it
+#  2. Default.rdp saved with level 0 by the user is respected
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd); HERE=$ROOT/tests/security/cert-prompt
 SRC=${1:-$ROOT/artifacts/prefixes/mstsc-patched}
@@ -32,8 +32,6 @@ check() { if [[ ${2:-0} == 1 ]]; then echo "PASS $1"; else echo "FAIL $1"; fail=
 attempt default 44480
 check "default settings: no data sent after TLS with untrusted cert (warning shown)" \
     $(grep -q 'TLS established' "$OUT/default.log" && ! grep -q 'CLIENT CONTINUED' "$OUT/default.log" && echo 1)
-check "launcher seeded Windows default (authentication level 2)" \
-    $(iconv -f UTF-16 -t UTF-8 "$DOC/Default.rdp" 2>/dev/null | grep -q 'authentication level:i:2' && echo 1)
 
 { printf '\xff\xfe'; printf 'authentication level:i:0\r\n' | iconv -t UTF-16LE; } > "$DOC/Default.rdp"
 attempt userzero 44481

@@ -1,0 +1,287 @@
+From 8f62c60667d13dee66e8956b6d994362a7554a71 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sat, 14 Nov 2026 12:54:06 -0500
+Subject: [PATCH 13/15] advapi32: Implement CredProtectW, CredUnprotectW and
+ CredIsProtectedW.
+
+Wine has no logon-session key yet (RtlEncryptMemory is a no-op), so protected
+credentials use Windows' "@@D" prefix with an encoding of the secret but no
+encryption.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/advapi32/advapi32.spec |   6 +-
+ dlls/advapi32/cred.c        | 123 ++++++++++++++++++++++++++++++++++++
+ dlls/advapi32/tests/cred.c  |  49 ++++++++++++++
+ dlls/sechost/sechost.spec   |   6 +-
+ 4 files changed, 178 insertions(+), 6 deletions(-)
+
+diff --git a/dlls/advapi32/advapi32.spec b/dlls/advapi32/advapi32.spec
+index 4a9db82..f3a72f6 100644
+--- a/dlls/advapi32/advapi32.spec
++++ b/dlls/advapi32/advapi32.spec
+@@ -162,14 +162,14 @@
+ @ stdcall CredIsMarshaledCredentialA(str)
+ @ stdcall CredIsMarshaledCredentialW(wstr)
+ # @ stub CredIsProtectedA
+-# @ stub CredIsProtectedW
++@ stdcall CredIsProtectedW(wstr ptr)
+ @ stdcall CredMarshalCredentialA(long ptr ptr)
+ @ stdcall CredMarshalCredentialW(long ptr ptr)
+ @ stub CredProfileLoaded
+ # @ stub CredProfileLoadedEx
+ # @ stub CredProfileUnloaded
+ # @ stub CredProtectA
+-# @ stub CredProtectW
++@ stdcall CredProtectW(long wstr long ptr ptr ptr)
+ @ stdcall CredReadA(str long long ptr)
+ # @ stub CredReadByTokenHandle
+ @ stdcall CredReadDomainCredentialsA(ptr long ptr ptr)
+@@ -181,7 +181,7 @@
+ @ stdcall CredUnmarshalCredentialA(str ptr ptr)
+ @ stdcall CredUnmarshalCredentialW(wstr ptr ptr)
+ # @ stub CredUnprotectA
+-# @ stub CredUnprotectW
++@ stdcall CredUnprotectW(long wstr long ptr ptr)
+ @ stdcall CredWriteA(ptr long)
+ # @ stub CredWriteDomainCredentialsA
+ # @ stub CredWriteDomainCredentialsW
+diff --git a/dlls/advapi32/cred.c b/dlls/advapi32/cred.c
+index 6e6f5b6..3ede291 100644
+--- a/dlls/advapi32/cred.c
++++ b/dlls/advapi32/cred.c
+@@ -1989,3 +1989,126 @@ BOOL WINAPI CredIsMarshaledCredentialA(LPCSTR name)
+     free(nameW);
+     return res;
+ }
++
++/* Protected credentials are "@@D" followed by the UTF-16 code units as hex.  Windows
++ * encrypts them with a logon-session key; Wine has no such key yet (RtlEncryptMemory
++ * is a no-op), so this only provides the format, not secrecy. */
++static const WCHAR protected_prefix[] = L"@@D";
++#define PROTECTED_PREFIX_LEN 3
++
++static DWORD cred_len( const WCHAR *str, DWORD len )
++{
++    if (len && !str[len - 1]) len--;
++    return len;
++}
++
++static BOOL is_protected( const WCHAR *str, DWORD len )
++{
++    DWORD i;
++
++    if (len < PROTECTED_PREFIX_LEN || (len - PROTECTED_PREFIX_LEN) % 4) return FALSE;
++    if (memcmp( str, protected_prefix, PROTECTED_PREFIX_LEN * sizeof(WCHAR) )) return FALSE;
++    for (i = PROTECTED_PREFIX_LEN; i < len; i++)
++        if (!((str[i] >= '0' && str[i] <= '9') || ((str[i] | 0x20) >= 'a' && (str[i] | 0x20) <= 'f'))) return FALSE;
++    return TRUE;
++}
++
++/******************************************************************************
++ * CredIsProtectedW [ADVAPI32.@]
++ */
++BOOL WINAPI CredIsProtectedW( LPWSTR str, CRED_PROTECTION_TYPE *type )
++{
++    TRACE( "(%p, %p)\n", str, type );
++
++    if (!str || !type)
++    {
++        SetLastError( ERROR_INVALID_PARAMETER );
++        return FALSE;
++    }
++    *type = is_protected( str, lstrlenW( str ) ) ? CredUserProtection : CredUnprotected;
++    return TRUE;
++}
++
++/******************************************************************************
++ * CredProtectW [ADVAPI32.@]
++ */
++BOOL WINAPI CredProtectW( BOOL as_self, LPWSTR in, DWORD in_len, LPWSTR out, DWORD *out_len,
++                          CRED_PROTECTION_TYPE *type )
++{
++    DWORD len, needed, i;
++    static const WCHAR hex[] = L"0123456789ABCDEF";
++
++    TRACE( "(%d, %p, %lu, %p, %p, %p)\n", as_self, in, in_len, out, out_len, type );
++
++    if (!in || !in_len || !out_len)
++    {
++        SetLastError( ERROR_INVALID_PARAMETER );
++        return FALSE;
++    }
++    len = cred_len( in, in_len );
++    if (is_protected( in, len ))
++    {
++        SetLastError( ERROR_INVALID_PARAMETER );
++        return FALSE;
++    }
++    needed = PROTECTED_PREFIX_LEN + len * 4 + 1;
++    if (!out || *out_len < needed)
++    {
++        *out_len = needed;
++        SetLastError( ERROR_INSUFFICIENT_BUFFER );
++        return FALSE;
++    }
++    memcpy( out, protected_prefix, PROTECTED_PREFIX_LEN * sizeof(WCHAR) );
++    for (i = 0; i < len; i++)
++    {
++        WCHAR c = in[i], *p = out + PROTECTED_PREFIX_LEN + i * 4;
++        p[0] = hex[(c >> 12) & 0xf]; p[1] = hex[(c >> 8) & 0xf];
++        p[2] = hex[(c >> 4) & 0xf];  p[3] = hex[c & 0xf];
++    }
++    out[needed - 1] = 0;
++    *out_len = needed;
++    if (type) *type = CredUserProtection;
++    return TRUE;
++}
++
++/******************************************************************************
++ * CredUnprotectW [ADVAPI32.@]
++ */
++BOOL WINAPI CredUnprotectW( BOOL as_self, LPWSTR in, DWORD in_len, LPWSTR out, DWORD *out_len )
++{
++    DWORD len, needed, i, j;
++
++    TRACE( "(%d, %p, %lu, %p, %p)\n", as_self, in, in_len, out, out_len );
++
++    if (!in || !in_len || !out_len)
++    {
++        SetLastError( ERROR_INVALID_PARAMETER );
++        return FALSE;
++    }
++    len = cred_len( in, in_len );
++    if (!is_protected( in, len ))
++    {
++        SetLastError( ERROR_NOT_CAPABLE );
++        return FALSE;
++    }
++    needed = (len - PROTECTED_PREFIX_LEN) / 4 + 1;
++    if (!out || *out_len < needed)
++    {
++        *out_len = needed;
++        SetLastError( ERROR_INSUFFICIENT_BUFFER );
++        return FALSE;
++    }
++    for (i = 0; i < needed - 1; i++)
++    {
++        WCHAR c = 0;
++        for (j = 0; j < 4; j++)
++        {
++            WCHAR h = in[PROTECTED_PREFIX_LEN + i * 4 + j];
++            c = (c << 4) | (h <= '9' ? h - '0' : (h | 0x20) - 'a' + 10);
++        }
++        out[i] = c;
++    }
++    out[needed - 1] = 0;
++    *out_len = needed;
++    return TRUE;
++}
+diff --git a/dlls/advapi32/tests/cred.c b/dlls/advapi32/tests/cred.c
+index 6bd5f15..1edd15b 100644
+--- a/dlls/advapi32/tests/cred.c
++++ b/dlls/advapi32/tests/cred.c
+@@ -20,6 +20,7 @@
+ 
+ #include <stdarg.h>
+ #include <stdio.h>
++#include <wchar.h>
+ 
+ #include "windef.h"
+ #include "winbase.h"
+@@ -768,6 +769,53 @@ static void test_CredIsMarshaledCredentialA(void)
+     }
+ }
+ 
++static void test_CredProtect(void)
++{
++    BOOL (WINAPI *pCredProtectW)(BOOL, WCHAR *, DWORD, WCHAR *, DWORD *, CRED_PROTECTION_TYPE *);
++    BOOL (WINAPI *pCredUnprotectW)(BOOL, WCHAR *, DWORD, WCHAR *, DWORD *);
++    BOOL (WINAPI *pCredIsProtectedW)(WCHAR *, CRED_PROTECTION_TYPE *);
++    HMODULE mod = GetModuleHandleA( "advapi32.dll" );
++    WCHAR secret[] = L"s3cret", prot[512], clear[64];
++    CRED_PROTECTION_TYPE type;
++    DWORD len;
++    BOOL ret;
++
++    pCredProtectW = (void *)GetProcAddress( mod, "CredProtectW" );
++    pCredUnprotectW = (void *)GetProcAddress( mod, "CredUnprotectW" );
++    pCredIsProtectedW = (void *)GetProcAddress( mod, "CredIsProtectedW" );
++    if (!pCredProtectW || !pCredUnprotectW || !pCredIsProtectedW)
++    {
++        win_skip( "CredProtectW not available\n" );
++        return;
++    }
++
++    len = 0;
++    SetLastError( 0xdeadbeef );
++    ret = pCredProtectW( TRUE, secret, ARRAY_SIZE(secret), NULL, &len, NULL );
++    ok( !ret, "expected failure\n" );
++    ok( GetLastError() == ERROR_INSUFFICIENT_BUFFER, "got %lu\n", GetLastError() );
++    ok( len > ARRAY_SIZE(secret), "got %lu\n", len );
++
++    len = ARRAY_SIZE(prot);
++    ret = pCredProtectW( TRUE, secret, ARRAY_SIZE(secret), prot, &len, &type );
++    ok( ret, "CredProtectW failed %lu\n", GetLastError() );
++    ok( type == CredUserProtection, "got %u\n", type );
++    ok( wcscmp( prot, secret ), "not protected\n" );
++
++    ret = pCredIsProtectedW( prot, &type );
++    ok( ret, "CredIsProtectedW failed %lu\n", GetLastError() );
++    ok( type == CredUserProtection, "got %u\n", type );
++    ret = pCredIsProtectedW( secret, &type );
++    ok( ret, "CredIsProtectedW failed %lu\n", GetLastError() );
++    ok( type == CredUnprotected, "got %u\n", type );
++
++    len = ARRAY_SIZE(clear);
++    ret = pCredUnprotectW( TRUE, prot, wcslen( prot ) + 1, clear, &len );
++    ok( ret, "CredUnprotectW failed %lu\n", GetLastError() );
++    ok( !wcscmp( clear, secret ), "got %s\n", wine_dbgstr_w(clear) );
++    ok( len == ARRAY_SIZE(secret), "got %lu\n", len );
++}
++
+ START_TEST(cred)
+ {
+     DWORD persists[CRED_TYPE_MAXIMUM];
+@@ -804,6 +852,7 @@ START_TEST(cred)
+     else
+         memset(persists, CRED_PERSIST_ENTERPRISE, sizeof(persists));
+ 
++    test_CredProtect();
+     test_CredReadA();
+     test_CredWriteA();
+     test_CredDeleteA();
+diff --git a/dlls/sechost/sechost.spec b/dlls/sechost/sechost.spec
+index de4f1f3..0eab536 100644
+--- a/dlls/sechost/sechost.spec
++++ b/dlls/sechost/sechost.spec
+@@ -55,7 +55,7 @@
+ @ stub CredGetTargetInfoW
+ @ stdcall CredIsMarshaledCredentialW(wstr) advapi32.CredIsMarshaledCredentialW
+ @ stub CredIsProtectedA
+-@ stub CredIsProtectedW
++@ stdcall CredIsProtectedW(wstr ptr) advapi32.CredIsProtectedW
+ @ stdcall CredMarshalCredentialA(long ptr ptr) advapi32.CredMarshalCredentialA
+ @ stdcall CredMarshalCredentialW(long ptr ptr) advapi32.CredMarshalCredentialW
+ @ stub CredParseUserNameWithType
+@@ -63,7 +63,7 @@
+ @ stub CredProfileLoadedEx
+ @ stub CredProfileUnloaded
+ @ stub CredProtectA
+-@ stub CredProtectW
++@ stdcall CredProtectW(long wstr long ptr ptr ptr) advapi32.CredProtectW
+ @ stdcall CredReadA(str long long ptr) advapi32.CredReadA
+ @ stub CredReadByTokenHandle
+ @ stdcall CredReadDomainCredentialsA(ptr long ptr ptr) advapi32.CredReadDomainCredentialsA
+@@ -73,7 +73,7 @@
+ @ stdcall CredUnmarshalCredentialA(str ptr ptr) advapi32.CredUnmarshalCredentialA
+ @ stdcall CredUnmarshalCredentialW(wstr ptr ptr) advapi32.CredUnmarshalCredentialW
+ @ stub CredUnprotectA
+-@ stub CredUnprotectW
++@ stdcall CredUnprotectW(long wstr long ptr ptr) advapi32.CredUnprotectW
+ @ stdcall CredWriteA(ptr long) advapi32.CredWriteA
+ @ stub CredWriteDomainCredentialsA
+ @ stub CredWriteDomainCredentialsW
+-- 
+2.47.3
+

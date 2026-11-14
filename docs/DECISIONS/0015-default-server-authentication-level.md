@@ -1,6 +1,7 @@
 # ADR-0015: Seed the Windows default server-authentication level (launcher, interim)
 
-- Status: accepted (interim, until CredSSP exists in Wine). 2026-11-14.
+- Status: **superseded** by ADR-0018 (2026-11-14). With the CredSSP package present, mstsc
+  defaults to "Warn me" itself; the launcher seeding was removed and the test still passes.
 - Defect (V):
   - With default settings (empty `Default.rdp`), the genuine mstsc connected to a
     server with an untrusted self-signed certificate **without warning** (EXP-025).

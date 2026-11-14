@@ -207,3 +207,15 @@ does not meet minimum policy requirements". With the package, it defaults to "Wa
 (EXP-025, EXP-027). Wine's crypt32 verdicts are correct. The launcher seeds level 2 until
 CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), including
 "Don't ask me again" pinning (`CertHash`).
+
+## R-019 NLA in Wine: CredSSP client, server authentication, NTLM interop (V)
+- mstsc over NLA delegates trust decisions to the CredSSP package via
+  `SECPKG_ATTR_SERVER_AUTH_FLAGS`. It does not run its own chain check, as it does for
+  TLS-only. Any CredSSP implementation must verify the certificate and report it, or
+  mstsc connects silently (EXP-029).
+- Samba's `ntlm_auth` (used by Wine's msv1_0) sends the NTLMv2 client blob without the
+  4 trailing zero bytes from the MS-NLMP pseudocode. Windows hashes the blob as
+  received and accepts it (EXP-030). pyspnego re-serializes it and rejects it; the test
+  fixture verifies the raw blob instead.
+- Native credssp/tspkg are not viable under Wine (ADR-0018).
+- CredProtect in Wine is encoding only (ADR-0017).

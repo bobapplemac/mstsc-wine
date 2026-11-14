@@ -12,7 +12,7 @@ A disposable Windows machine you control. Never use a production or shared serve
 
 ## Account
 - A local, non-admin test user in the "Remote Desktop Users" group, with a throwaway password.
-- Type the credentials yourself in the genuine mstsc credential prompt. Never put them in
+- Type the credentials yourself in the credential prompt (Wine's dialog, ADR-0016). Never put them in
   files, environment variables, commands, chat or logs.
 
 ## Certificate

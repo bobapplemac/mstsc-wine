@@ -1,7 +1,7 @@
 From 7a24240c96505a9706bc2c3b38b04546f9ce3cda Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:45:21 -0500
-Subject: [PATCH 10/11] secur32: Tolerate server certificate key usage
+Subject: [PATCH 10/15] secur32: Tolerate server certificate key usage
  violations in client sessions.
 
 Windows clients accept server certificates whose key usage lacks

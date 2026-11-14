@@ -107,18 +107,6 @@ cmd_init() {
     note "prefix ready (log: $LOG)"
 }
 
-# ADR-0015: mstsc derives its default server-authentication level from whether a
-# CREDSSP package exists. Wine has none yet, so mstsc falls back to the legacy
-# "Connect and don't warn me". Windows defaults to "Warn me" (2). Until CredSSP lands,
-# seed that Windows default, but only when Default.rdp is missing or empty, so a level
-# the user saved is never overridden.
-seed_default_rdp() {
-    local f="$WINEPREFIX/drive_c/users/$USER/Documents/Default.rdp"
-    [[ -s "$f" ]] && return 0
-    mkdir -p "${f%/*}"
-    { printf '\xff\xfe'; printf 'authentication level:i:2\r\n' | iconv -f UTF-8 -t UTF-16LE; } > "$f"
-}
-
 # Map a component-store path to a path under C:\windows, case-normalising the
 # top-level folder (system32, Fonts, SystemResources).
 winrel() {
@@ -198,7 +186,6 @@ cmd_run() {
     setup_env
     [[ -f "$WINEPREFIX/system.reg" ]] || cmd_init
     [[ -f "$(sys32)/mstsc.exe" ]] || die "mstsc.exe not installed in prefix; run: mstsc-wine import DIR && mstsc-wine init"
-    seed_default_rdp
     new_log mstsc
     # Arguments are passed as an array; .rdp paths are converted to Windows paths.
     local args=() a

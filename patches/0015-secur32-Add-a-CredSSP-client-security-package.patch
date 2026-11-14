@@ -1,0 +1,1382 @@
+From 6f3c0c524e808b286d4b8c5fe7f9abc9d409c06a Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sat, 14 Nov 2026 12:54:06 -0500
+Subject: [PATCH 15/15] secur32: Add a CredSSP client security package.
+
+Implements the client side of [MS-CSSP] versions 2-6 on top of Schannel and
+Negotiate: TLS handshake, SPNEGO exchange, public key binding (SHA-256 with
+client nonce from version 5, CVE-2018-0886) and password delegation.  The
+server certificate is verified against the target host name and reported via
+SECPKG_ATTR_SERVER_AUTH_FLAGS and SECPKG_ATTR_CERT_TRUST_STATUS, which the
+Remote Desktop client uses to warn about unauthenticated servers.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/secur32/Makefile.in    |    3 +-
+ dlls/secur32/credssp.c      | 1310 +++++++++++++++++++++++++++++++++++
+ dlls/secur32/secur32.c      |    1 +
+ dlls/secur32/secur32_priv.h |    1 +
+ 4 files changed, 1314 insertions(+), 1 deletion(-)
+ create mode 100644 dlls/secur32/credssp.c
+
+diff --git a/dlls/secur32/Makefile.in b/dlls/secur32/Makefile.in
+index 2120a9c..f64b211 100644
+--- a/dlls/secur32/Makefile.in
++++ b/dlls/secur32/Makefile.in
+@@ -1,11 +1,12 @@
+ MODULE    = secur32.dll
+ IMPORTLIB = secur32
+ UNIXLIB   = secur32.so
+-IMPORTS   = advapi32
++IMPORTS   = advapi32 bcrypt
+ DELAYIMPORTS = crypt32
+ UNIX_CFLAGS  = $(GNUTLS_CFLAGS)
+ 
+ SOURCES = \
++	credssp.c \
+ 	lsa.c \
+ 	negotiate.c \
+ 	schannel.c \
+diff --git a/dlls/secur32/credssp.c b/dlls/secur32/credssp.c
+new file mode 100644
+index 0000000..926d261
+--- /dev/null
++++ b/dlls/secur32/credssp.c
+@@ -0,0 +1,1310 @@
++/*
++ * Credential Security Support Provider (CredSSP), client side.
++ *
++ * Implements the client of [MS-CSSP] versions 2 to 6 on top of the Schannel and
++ * Negotiate packages:
++ *   1. TLS handshake with the server (Schannel).
++ *   2. SPNEGO exchange (Negotiate) carried in TSRequest.negoTokens.
++ *   3. Binding of the authentication to the server's TLS public key (pubKeyAuth;
++ *      a SHA-256 hash with a client nonce from version 5 on, CVE-2018-0886).
++ *   4. Delegation of the user's password credentials (authInfo).
++ * Afterwards EncryptMessage/DecryptMessage use the TLS channel.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include <stdarg.h>
++#include <stdlib.h>
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "windef.h"
++#include "winbase.h"
++#include "winternl.h"
++#include "wincrypt.h"
++#include "wincred.h"
++#include "bcrypt.h"
++#define SECURITY_WIN32
++#include "sspi.h"
++#include "rpc.h"
++#include "schannel.h"
++#include "credssp.h"
++#include "secur32_priv.h"
++
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(secur32);
++
++#define CREDSSP_VERSION 6
++#define CREDSSP_MAX_TOKEN 0xbb80
++
++#define CREDSSP_CRED_MAGIC 0x43737343  /* "CssC" */
++#define CREDSSP_CTX_MAGIC  0x43737358  /* "CssX" */
++
++/* SEC_WINNT_AUTH_IDENTITY_EXW, not in Wine's headers */
++#define AUTH_IDENTITY_VERSION 0x200
++struct auth_identity_ex
++{
++    ULONG Version;
++    ULONG Length;
++    unsigned short *User;
++    ULONG UserLength;
++    unsigned short *Domain;
++    ULONG DomainLength;
++    unsigned short *Password;
++    ULONG PasswordLength;
++    ULONG Flags;
++    unsigned short *PackageList;
++    ULONG PackageListLength;
++};
++
++struct credssp_cred
++{
++    ULONG    magic;
++    CredHandle tls;
++    CredHandle nego;
++    BOOL     have_nego;
++    WCHAR   *user;
++    WCHAR   *domain;
++    WCHAR   *password;
++};
++
++enum credssp_state
++{
++    STATE_TLS,       /* TLS handshake in progress */
++    STATE_NEGO,      /* SPNEGO tokens being exchanged */
++    STATE_PUBKEY,    /* waiting for the server's pubKeyAuth */
++    STATE_DONE,
++    STATE_FAILED
++};
++
++struct credssp_ctx
++{
++    ULONG    magic;
++    enum credssp_state state;
++    struct credssp_cred *cred;
++    CtxtHandle tls;
++    CtxtHandle nego;
++    BOOL     tls_valid;
++    BOOL     nego_valid;
++    BOOL     nego_done;
++    WCHAR   *spn;
++    WCHAR   *host;
++    ULONG    req;
++    ULONG    version;        /* negotiated */
++    BYTE     nonce[32];
++    BYTE    *pubkey;         /* server's SubjectPublicKey */
++    DWORD    pubkey_len;
++    ULONG    server_auth;    /* CREDSSP_SERVER_AUTH_* */
++    CERT_TRUST_STATUS trust; /* of the server certificate chain */
++    BYTE    *plain;          /* decrypted, not yet complete TSRequest */
++    DWORD    plain_len;
++    SecPkgContext_StreamSizes sizes;
++};
++
++/* ------------------------------------------------------------------ */
++/* DER helpers                                                         */
++
++struct blob
++{
++    BYTE  *data;
++    DWORD  len;
++};
++
++static void free_blob( struct blob *b )
++{
++    free( b->data );
++    b->data = NULL;
++    b->len = 0;
++}
++
++static DWORD der_len_size( DWORD len )
++{
++    if (len < 0x80) return 1;
++    if (len < 0x100) return 2;
++    if (len < 0x10000) return 3;
++    if (len < 0x1000000) return 4;
++    return 5;
++}
++
++static BYTE *der_put_header( BYTE *p, BYTE tag, DWORD len )
++{
++    DWORD n = der_len_size( len ), i;
++    *p++ = tag;
++    if (n == 1) *p++ = len;
++    else
++    {
++        *p++ = 0x80 | (n - 1);
++        for (i = n - 1; i > 0; i--) *p++ = len >> ((i - 1) * 8);
++    }
++    return p;
++}
++
++/* wraps the concatenation of parts in a TLV; frees the parts */
++static BOOL der_wrap( BYTE tag, struct blob *parts, unsigned int count, struct blob *out )
++{
++    DWORD len = 0, i;
++    BYTE *p;
++
++    for (i = 0; i < count; i++) len += parts[i].len;
++    out->len = 1 + der_len_size( len ) + len;
++    if (!(out->data = malloc( out->len )))
++    {
++        for (i = 0; i < count; i++) free_blob( &parts[i] );
++        return FALSE;
++    }
++    p = der_put_header( out->data, tag, len );
++    for (i = 0; i < count; i++)
++    {
++        if (parts[i].len) memcpy( p, parts[i].data, parts[i].len );
++        p += parts[i].len;
++        free_blob( &parts[i] );
++    }
++    return TRUE;
++}
++
++static BOOL der_octets( BYTE tag, const void *data, DWORD len, struct blob *out )
++{
++    struct blob part = { malloc( len ? len : 1 ), len };
++    if (!part.data) return FALSE;
++    if (len) memcpy( part.data, data, len );
++    return der_wrap( tag, &part, 1, out );
++}
++
++static BOOL der_uint( ULONG value, struct blob *out )
++{
++    BYTE buf[5];
++    DWORD n = 0, i;
++
++    /* minimal two's complement encoding of a non-negative value */
++    for (i = 4; i > 0; i--)
++        if ((value >> ((i - 1) * 8)) & 0xff) break;
++    if (!i) i = 1;
++    if ((value >> ((i - 1) * 8)) & 0x80) buf[n++] = 0;
++    while (i--) buf[n++] = value >> (i * 8);
++    return der_octets( 0x02, buf, n, out );
++}
++
++/* [tag] EXPLICIT wrapper around an encoded element */
++static BOOL der_explicit( unsigned int tag, struct blob *inner, struct blob *out )
++{
++    return der_wrap( 0xa0 | tag, inner, 1, out );
++}
++
++struct der
++{
++    const BYTE *p;
++    DWORD       len;
++};
++
++/* reads one TLV; returns FALSE if malformed or truncated */
++static BOOL der_read( struct der *d, BYTE *tag, struct der *content )
++{
++    DWORD len, n, hdr = 2, i;
++
++    if (d->len < 2) return FALSE;
++    *tag = d->p[0];
++    len = d->p[1];
++    if (len & 0x80)
++    {
++        n = len & 0x7f;
++        if (!n || n > 4 || d->len < 2 + n) return FALSE;
++        for (len = 0, i = 0; i < n; i++) len = (len << 8) | d->p[2 + i];
++        hdr += n;
++    }
++    if (len > d->len - hdr) return FALSE;
++    content->p = d->p + hdr;
++    content->len = len;
++    d->p += hdr + len;
++    d->len -= hdr + len;
++    return TRUE;
++}
++
++/* total size of the DER element at the start of buf, or 0 if not yet known */
++static DWORD der_total_size( const BYTE *buf, DWORD len )
++{
++    DWORD n, size, i;
++
++    if (len < 2) return 0;
++    size = buf[1];
++    if (!(size & 0x80)) return 2 + size;
++    n = size & 0x7f;
++    if (!n || n > 4) return ~0u;
++    if (len < 2 + n) return 0;
++    for (size = 0, i = 0; i < n; i++) size = (size << 8) | buf[2 + i];
++    return 2 + n + size;
++}
++
++static BOOL der_get_uint( struct der *content, ULONG *value )
++{
++    DWORD i;
++    if (!content->len || content->len > 5) return FALSE;
++    for (*value = 0, i = 0; i < content->len; i++) *value = (*value << 8) | content->p[i];
++    return TRUE;
++}
++
++struct ts_request
++{
++    ULONG       version;
++    struct der  nego_token;
++    struct der  auth_info;
++    struct der  pubkey_auth;
++    struct der  client_nonce;
++    BOOL        has_error;
++    ULONG       error;
++};
++
++static BOOL parse_ts_request( const BYTE *data, DWORD len, struct ts_request *req )
++{
++    struct der d = { data, len }, seq, field, inner, item;
++    BYTE tag;
++
++    memset( req, 0, sizeof(*req) );
++    if (!der_read( &d, &tag, &seq ) || tag != 0x30) return FALSE;
++    while (seq.len)
++    {
++        if (!der_read( &seq, &tag, &field )) return FALSE;
++        switch (tag)
++        {
++        case 0xa0: /* version */
++            if (!der_read( &field, &tag, &inner ) || tag != 0x02 || !der_get_uint( &inner, &req->version ))
++                return FALSE;
++            break;
++        case 0xa1: /* negoTokens: SEQUENCE OF SEQUENCE { [0] OCTET STRING } */
++            if (!der_read( &field, &tag, &inner ) || tag != 0x30) return FALSE;
++            if (!der_read( &inner, &tag, &item ) || tag != 0x30) return FALSE;
++            if (!der_read( &item, &tag, &inner ) || tag != 0xa0) return FALSE;
++            if (!der_read( &inner, &tag, &req->nego_token ) || tag != 0x04) return FALSE;
++            break;
++        case 0xa2:
++            if (!der_read( &field, &tag, &req->auth_info ) || tag != 0x04) return FALSE;
++            break;
++        case 0xa3:
++            if (!der_read( &field, &tag, &req->pubkey_auth ) || tag != 0x04) return FALSE;
++            break;
++        case 0xa4:
++            if (!der_read( &field, &tag, &inner ) || tag != 0x02 || !der_get_uint( &inner, &req->error ))
++                return FALSE;
++            req->has_error = TRUE;
++            break;
++        case 0xa5:
++            if (!der_read( &field, &tag, &req->client_nonce ) || tag != 0x04) return FALSE;
++            break;
++        default:
++            WARN( "ignoring TSRequest field %#x\n", tag );
++            break;
++        }
++    }
++    return TRUE;
++}
++
++static BOOL build_ts_request( ULONG version, const struct blob *nego_token, const struct blob *auth_info,
++                              const struct blob *pubkey_auth, const BYTE *nonce, struct blob *out )
++{
++    struct blob fields[4], tmp, tmp2;
++    unsigned int n = 0;
++
++    memset( fields, 0, sizeof(fields) );
++    if (!der_uint( version, &tmp ) || !der_explicit( 0, &tmp, &fields[n++] )) goto fail;
++    if (nego_token && nego_token->len)
++    {
++        struct blob tok;
++        if (!der_octets( 0x04, nego_token->data, nego_token->len, &tmp )) goto fail;
++        if (!der_explicit( 0, &tmp, &tok )) goto fail;
++        if (!der_wrap( 0x30, &tok, 1, &tmp )) goto fail;     /* NegoDataItem */
++        if (!der_wrap( 0x30, &tmp, 1, &tmp2 )) goto fail;    /* NegoData */
++        if (!der_explicit( 1, &tmp2, &fields[n++] )) goto fail;
++    }
++    if (auth_info)
++    {
++        if (!der_octets( 0x04, auth_info->data, auth_info->len, &tmp )) goto fail;
++        if (!der_explicit( 2, &tmp, &fields[n++] )) goto fail;
++    }
++    if (pubkey_auth)
++    {
++        if (!der_octets( 0x04, pubkey_auth->data, pubkey_auth->len, &tmp )) goto fail;
++        if (!der_explicit( 3, &tmp, &fields[n++] )) goto fail;
++    }
++    if (nonce)
++    {
++        if (n >= ARRAY_SIZE(fields)) goto fail;
++        if (!der_octets( 0x04, nonce, 32, &tmp )) goto fail;
++        if (!der_explicit( 5, &tmp, &fields[n++] )) goto fail;
++    }
++    return der_wrap( 0x30, fields, n, out );
++
++fail:
++    while (n--) free_blob( &fields[n] );
++    return FALSE;
++}
++
++/* TSCredentials { credType 1, TSPasswordCreds { domainName, userName, password } } */
++static BOOL build_ts_credentials( const struct credssp_cred *cred, struct blob *out )
++{
++    struct blob f[3] = {{ 0 }}, tmp, pwd, creds[2] = {{ 0 }};
++    const WCHAR *strings[3] = { cred->domain ? cred->domain : L"", cred->user ? cred->user : L"",
++                                cred->password ? cred->password : L"" };
++    unsigned int i, n = 0;
++
++    for (i = 0; i < 3; i++)
++    {
++        if (!der_octets( 0x04, strings[i], wcslen( strings[i] ) * sizeof(WCHAR), &tmp ) ||
++            !der_explicit( i, &tmp, &f[n++] ))
++            goto fail;
++    }
++    if (!der_wrap( 0x30, f, 3, &pwd )) return FALSE;
++    n = 0;
++    if (!der_uint( 1, &tmp ) || !der_explicit( 0, &tmp, &creds[0] )) { SecureZeroMemory( pwd.data, pwd.len ); free_blob( &pwd ); return FALSE; }
++    n = 1;
++    if (!der_octets( 0x04, pwd.data, pwd.len, &tmp ))
++    {
++        SecureZeroMemory( pwd.data, pwd.len ); free_blob( &pwd ); free_blob( &creds[0] );
++        return FALSE;
++    }
++    SecureZeroMemory( pwd.data, pwd.len );
++    free_blob( &pwd );
++    if (!der_explicit( 1, &tmp, &creds[1] )) { free_blob( &creds[0] ); return FALSE; }
++    return der_wrap( 0x30, creds, 2, out );
++
++fail:
++    while (n--) { SecureZeroMemory( f[n].data, f[n].len ); free_blob( &f[n] ); }
++    return FALSE;
++}
++
++/* ------------------------------------------------------------------ */
++/* helpers                                                             */
++
++static WCHAR *strdupW_len( const WCHAR *str, DWORD len )
++{
++    WCHAR *ret;
++    if (!str) return NULL;
++    if (!(ret = malloc( (len + 1) * sizeof(WCHAR) ))) return NULL;
++    memcpy( ret, str, len * sizeof(WCHAR) );
++    ret[len] = 0;
++    return ret;
++}
++
++static void free_secret( WCHAR *str )
++{
++    if (!str) return;
++    SecureZeroMemory( str, wcslen( str ) * sizeof(WCHAR) );
++    free( str );
++}
++
++/* replaces a CredProtect()ed password with its clear text */
++static void unprotect_password( WCHAR **password )
++{
++    CRED_PROTECTION_TYPE type;
++    DWORD len = 0;
++    WCHAR *clear;
++
++    if (!*password || !CredIsProtectedW( *password, &type ) || type == CredUnprotected) return;
++    CredUnprotectW( FALSE, *password, wcslen( *password ) + 1, NULL, &len );
++    if (!len || !(clear = malloc( len * sizeof(WCHAR) ))) return;
++    if (CredUnprotectW( FALSE, *password, wcslen( *password ) + 1, clear, &len ))
++    {
++        free_secret( *password );
++        *password = clear;
++    }
++    else free( clear );
++}
++
++static BOOL get_packed_string( const BYTE *buf, DWORD size, const UNICODE_STRING *str, WCHAR **out )
++{
++    ULONG_PTR off = (ULONG_PTR)str->Buffer;
++
++    *out = NULL;
++    if (!str->Length) return TRUE;
++    if (off >= (ULONG_PTR)buf && off - (ULONG_PTR)buf < size) off -= (ULONG_PTR)buf;
++    if ((str->Length & 1) || off > size || str->Length > size - off) return FALSE;
++    return (*out = strdupW_len( (const WCHAR *)(buf + off), str->Length / sizeof(WCHAR) )) != NULL;
++}
++
++/* pSpnegoCred: a packed KERB_INTERACTIVE_(UNLOCK_)LOGON (CredUIPromptForWindowsCredentials
++ * output) or a SEC_WINNT_AUTH_IDENTITY(_EX)W */
++static SECURITY_STATUS parse_spnego_cred( CREDSPP_SUBMIT_TYPE type, const void *data, struct credssp_cred *cred )
++{
++    const KERB_INTERACTIVE_UNLOCK_LOGON *logon = data;
++    const struct auth_identity_ex *ex = data;
++    const SEC_WINNT_AUTH_IDENTITY_W *id = data;
++
++    if (!data) return SEC_E_OK;
++
++    if ((type == CredsspSubmitBufferBoth || type == CredsspSubmitBufferBothOld) &&
++        (logon->Logon.MessageType == KerbInteractiveLogon || logon->Logon.MessageType == KerbWorkstationUnlockLogon))
++    {
++        /* the packed buffer size is not passed; strings follow the header */
++        const DWORD size = sizeof(*logon) + logon->Logon.LogonDomainName.Length +
++                           logon->Logon.UserName.Length + logon->Logon.Password.Length;
++        if (!get_packed_string( data, size, &logon->Logon.LogonDomainName, &cred->domain ) ||
++            !get_packed_string( data, size, &logon->Logon.UserName, &cred->user ) ||
++            !get_packed_string( data, size, &logon->Logon.Password, &cred->password ))
++            return SEC_E_INVALID_TOKEN;
++    }
++    else if (ex->Version == AUTH_IDENTITY_VERSION)
++    {
++        if (!(ex->Flags & SEC_WINNT_AUTH_IDENTITY_UNICODE))
++        {
++            FIXME( "ANSI identities not supported\n" );
++            return SEC_E_UNSUPPORTED_FUNCTION;
++        }
++        cred->user = strdupW_len( (const WCHAR *)ex->User, ex->UserLength );
++        cred->domain = strdupW_len( (const WCHAR *)ex->Domain, ex->DomainLength );
++        cred->password = strdupW_len( (const WCHAR *)ex->Password, ex->PasswordLength );
++    }
++    else
++    {
++        if (!(id->Flags & SEC_WINNT_AUTH_IDENTITY_UNICODE))
++        {
++            FIXME( "ANSI identities not supported\n" );
++            return SEC_E_UNSUPPORTED_FUNCTION;
++        }
++        cred->user = strdupW_len( (const WCHAR *)id->User, id->UserLength );
++        cred->domain = strdupW_len( (const WCHAR *)id->Domain, id->DomainLength );
++        cred->password = strdupW_len( (const WCHAR *)id->Password, id->PasswordLength );
++    }
++    unprotect_password( &cred->password );
++
++    /* "DOMAIN\user" in the user name */
++    if (cred->user && !cred->domain)
++    {
++        WCHAR *sep = wcschr( cred->user, '\\' );
++        if (sep)
++        {
++            cred->domain = strdupW_len( cred->user, sep - cred->user );
++            memmove( cred->user, sep + 1, (wcslen( sep + 1 ) + 1) * sizeof(WCHAR) );
++        }
++    }
++    TRACE( "user %s domain %s\n", debugstr_w(cred->user), debugstr_w(cred->domain) );
++    return SEC_E_OK;
++}
++
++static void free_cred( struct credssp_cred *cred )
++{
++    if (cred->tls.dwLower || cred->tls.dwUpper) FreeCredentialsHandle( &cred->tls );
++    if (cred->have_nego) FreeCredentialsHandle( &cred->nego );
++    free( cred->user );
++    free( cred->domain );
++    free_secret( cred->password );
++    cred->magic = 0;
++    free( cred );
++}
++
++static struct credssp_cred *get_cred( PCredHandle handle )
++{
++    struct credssp_cred *cred;
++    if (!handle || !handle->dwLower) return NULL;
++    cred = (struct credssp_cred *)handle->dwLower;
++    return cred->magic == CREDSSP_CRED_MAGIC ? cred : NULL;
++}
++
++static struct credssp_ctx *get_ctx( PCtxtHandle handle )
++{
++    struct credssp_ctx *ctx;
++    if (!handle || !handle->dwLower) return NULL;
++    ctx = (struct credssp_ctx *)handle->dwLower;
++    return ctx->magic == CREDSSP_CTX_MAGIC ? ctx : NULL;
++}
++
++static SecBuffer *find_buffer( PSecBufferDesc desc, ULONG type )
++{
++    ULONG i;
++    if (!desc) return NULL;
++    for (i = 0; i < desc->cBuffers; i++)
++        if ((desc->pBuffers[i].BufferType & ~SECBUFFER_ATTRMASK) == type) return &desc->pBuffers[i];
++    return NULL;
++}
++
++/* hands data to the caller's output token buffer */
++static SECURITY_STATUS set_output( struct credssp_ctx *ctx, PSecBufferDesc out, const BYTE *data, DWORD len )
++{
++    SecBuffer *buf = find_buffer( out, SECBUFFER_TOKEN );
++
++    if (!buf)
++    {
++        if (!len) return SEC_E_OK;
++        return SEC_E_INVALID_TOKEN;
++    }
++    if (ctx->req & ISC_REQ_ALLOCATE_MEMORY)
++    {
++        buf->pvBuffer = NULL;
++        buf->cbBuffer = len;
++        if (!len) return SEC_E_OK;
++        if (!(buf->pvBuffer = RtlAllocateHeap( GetProcessHeap(), 0, len ))) return SEC_E_INSUFFICIENT_MEMORY;
++        memcpy( buf->pvBuffer, data, len );
++        return SEC_E_OK;
++    }
++    if (buf->cbBuffer < len) return SEC_E_BUFFER_TOO_SMALL;
++    if (len) memcpy( buf->pvBuffer, data, len );
++    buf->cbBuffer = len;
++    return SEC_E_OK;
++}
++
++static BOOL sha256( const char *magic, const BYTE *nonce, const BYTE *key, DWORD key_len, BYTE *hash )
++{
++    BCRYPT_HASH_HANDLE h;
++    BOOL ret;
++
++    if (BCryptCreateHash( BCRYPT_SHA256_ALG_HANDLE, &h, NULL, 0, NULL, 0, 0 )) return FALSE;
++    ret = !BCryptHashData( h, (UCHAR *)magic, strlen( magic ) + 1, 0 ) &&
++          !BCryptHashData( h, (UCHAR *)nonce, 32, 0 ) &&
++          !BCryptHashData( h, (UCHAR *)key, key_len, 0 ) &&
++          !BCryptFinishHash( h, hash, 32, 0 );
++    BCryptDestroyHash( h );
++    return ret;
++}
++
++/* Negotiate seal: output is security trailer followed by the encrypted data */
++static SECURITY_STATUS nego_encrypt( struct credssp_ctx *ctx, const BYTE *data, DWORD len, struct blob *out )
++{
++    SecPkgContext_Sizes sizes;
++    SecBuffer bufs[2];
++    SecBufferDesc desc = { SECBUFFER_VERSION, 2, bufs };
++    SECURITY_STATUS status;
++
++    if ((status = QueryContextAttributesW( &ctx->nego, SECPKG_ATTR_SIZES, &sizes ))) return status;
++    out->len = sizes.cbSecurityTrailer + len;
++    if (!(out->data = malloc( out->len ))) return SEC_E_INSUFFICIENT_MEMORY;
++    bufs[0].BufferType = SECBUFFER_TOKEN;
++    bufs[0].cbBuffer = sizes.cbSecurityTrailer;
++    bufs[0].pvBuffer = out->data;
++    bufs[1].BufferType = SECBUFFER_DATA;
++    bufs[1].cbBuffer = len;
++    bufs[1].pvBuffer = out->data + sizes.cbSecurityTrailer;
++    memcpy( bufs[1].pvBuffer, data, len );
++    if ((status = EncryptMessage( &ctx->nego, 0, &desc, 0 )))
++    {
++        SecureZeroMemory( out->data, out->len );
++        free_blob( out );
++        return status;
++    }
++    /* the trailer may be shorter than the maximum */
++    if (bufs[0].cbBuffer < sizes.cbSecurityTrailer)
++    {
++        memmove( out->data + bufs[0].cbBuffer, bufs[1].pvBuffer, bufs[1].cbBuffer );
++        out->len = bufs[0].cbBuffer + bufs[1].cbBuffer;
++    }
++    return SEC_E_OK;
++}
++
++static SECURITY_STATUS nego_decrypt( struct credssp_ctx *ctx, const BYTE *data, DWORD len, struct blob *out )
++{
++    SecPkgContext_Sizes sizes;
++    SecBuffer bufs[2];
++    SecBufferDesc desc = { SECBUFFER_VERSION, 2, bufs };
++    SECURITY_STATUS status;
++    BYTE *copy;
++
++    if ((status = QueryContextAttributesW( &ctx->nego, SECPKG_ATTR_SIZES, &sizes ))) return status;
++    if (len < sizes.cbSecurityTrailer) return SEC_E_MESSAGE_ALTERED;
++    if (!(copy = malloc( len ))) return SEC_E_INSUFFICIENT_MEMORY;
++    memcpy( copy, data, len );
++    bufs[0].BufferType = SECBUFFER_TOKEN;
++    bufs[0].cbBuffer = sizes.cbSecurityTrailer;
++    bufs[0].pvBuffer = copy;
++    bufs[1].BufferType = SECBUFFER_DATA;
++    bufs[1].cbBuffer = len - sizes.cbSecurityTrailer;
++    bufs[1].pvBuffer = copy + sizes.cbSecurityTrailer;
++    if ((status = DecryptMessage( &ctx->nego, &desc, 0, NULL )))
++    {
++        free( copy );
++        return status;
++    }
++    out->len = bufs[1].cbBuffer;
++    if (!(out->data = malloc( out->len ? out->len : 1 ))) { free( copy ); return SEC_E_INSUFFICIENT_MEMORY; }
++    memcpy( out->data, bufs[1].pvBuffer, out->len );
++    SecureZeroMemory( copy, len );
++    free( copy );
++    return SEC_E_OK;
++}
++
++/* TLS-encrypts a TSRequest and appends the records to out */
++static SECURITY_STATUS tls_encrypt_append( struct credssp_ctx *ctx, const struct blob *msg, struct blob *out )
++{
++    DWORD done = 0;
++
++    while (done < msg->len)
++    {
++        DWORD chunk = min( msg->len - done, ctx->sizes.cbMaximumMessage );
++        DWORD rec = ctx->sizes.cbHeader + chunk + ctx->sizes.cbTrailer;
++        SecBuffer bufs[4];
++        SecBufferDesc desc = { SECBUFFER_VERSION, 4, bufs };
++        SECURITY_STATUS status;
++        BYTE *p, *grown;
++
++        if (!(grown = realloc( out->data, out->len + rec ))) return SEC_E_INSUFFICIENT_MEMORY;
++        out->data = grown;
++        p = out->data + out->len;
++        bufs[0].BufferType = SECBUFFER_STREAM_HEADER;  bufs[0].cbBuffer = ctx->sizes.cbHeader;  bufs[0].pvBuffer = p;
++        bufs[1].BufferType = SECBUFFER_DATA;           bufs[1].cbBuffer = chunk;                bufs[1].pvBuffer = p + ctx->sizes.cbHeader;
++        bufs[2].BufferType = SECBUFFER_STREAM_TRAILER; bufs[2].cbBuffer = ctx->sizes.cbTrailer; bufs[2].pvBuffer = p + ctx->sizes.cbHeader + chunk;
++        bufs[3].BufferType = SECBUFFER_EMPTY;          bufs[3].cbBuffer = 0;                    bufs[3].pvBuffer = NULL;
++        memcpy( bufs[1].pvBuffer, msg->data + done, chunk );
++        if ((status = EncryptMessage( &ctx->tls, 0, &desc, 0 ))) return status;
++        rec = bufs[0].cbBuffer + bufs[1].cbBuffer + bufs[2].cbBuffer;
++        out->len += rec;
++        done += chunk;
++    }
++    return SEC_E_OK;
++}
++
++static SECURITY_STATUS send_ts_request( struct credssp_ctx *ctx, const struct blob *nego_token,
++                                        const struct blob *auth_info, const struct blob *pubkey_auth,
++                                        BOOL with_nonce, struct blob *out )
++{
++    struct blob msg = { 0 };
++    SECURITY_STATUS status;
++
++    if (!build_ts_request( ctx->version, nego_token, auth_info, pubkey_auth,
++                           with_nonce ? ctx->nonce : NULL, &msg ))
++        return SEC_E_INSUFFICIENT_MEMORY;
++    status = tls_encrypt_append( ctx, &msg, out );
++    SecureZeroMemory( msg.data, msg.len );
++    free_blob( &msg );
++    return status;
++}
++
++/* steps the Negotiate context; *done is set when it completes */
++static SECURITY_STATUS nego_step( struct credssp_ctx *ctx, const BYTE *in, DWORD in_len, struct blob *token )
++{
++    SecBuffer in_buf = { in_len, SECBUFFER_TOKEN, (void *)in }, out_buf = { 0, SECBUFFER_TOKEN, NULL };
++    SecBufferDesc in_desc = { SECBUFFER_VERSION, 1, &in_buf }, out_desc = { SECBUFFER_VERSION, 1, &out_buf };
++    ULONG attrs;
++    SECURITY_STATUS status;
++
++    status = InitializeSecurityContextW( &ctx->cred->nego, ctx->nego_valid ? &ctx->nego : NULL, ctx->spn,
++                                         ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_MUTUAL_AUTH | ISC_REQ_CONFIDENTIALITY |
++                                         ISC_REQ_INTEGRITY | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT |
++                                         ISC_REQ_USE_SESSION_KEY,
++                                         0, SECURITY_NATIVE_DREP, in ? &in_desc : NULL, 0, &ctx->nego,
++                                         &out_desc, &attrs, NULL );
++    TRACE( "Negotiate step: %#lx, token %lu bytes\n", status, out_buf.cbBuffer );
++    if (status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) return status;
++    ctx->nego_valid = TRUE;
++    if (status == SEC_E_OK) ctx->nego_done = TRUE;
++    if (out_buf.cbBuffer && out_buf.pvBuffer)
++    {
++        if ((token->data = malloc( out_buf.cbBuffer )))
++        {
++            memcpy( token->data, out_buf.pvBuffer, out_buf.cbBuffer );
++            token->len = out_buf.cbBuffer;
++        }
++        FreeContextBuffer( out_buf.pvBuffer );
++        if (!token->data) return SEC_E_INSUFFICIENT_MEMORY;
++    }
++    return SEC_E_OK;
++}
++
++/* pubKeyAuth sent by the client: version 5+ hashes the key with the nonce */
++static SECURITY_STATUS make_pubkey_auth( struct credssp_ctx *ctx, struct blob *out )
++{
++    BYTE hash[32];
++
++    if (ctx->version >= 5)
++    {
++        if (!sha256( "CredSSP Client-To-Server Binding Hash", ctx->nonce, ctx->pubkey, ctx->pubkey_len, hash ))
++            return SEC_E_INTERNAL_ERROR;
++        return nego_encrypt( ctx, hash, sizeof(hash), out );
++    }
++    return nego_encrypt( ctx, ctx->pubkey, ctx->pubkey_len, out );
++}
++
++static SECURITY_STATUS check_pubkey_auth( struct credssp_ctx *ctx, const struct der *auth )
++{
++    struct blob plain = { 0 };
++    SECURITY_STATUS status;
++    BOOL ok;
++
++    if ((status = nego_decrypt( ctx, auth->p, auth->len, &plain ))) return status;
++    if (ctx->version >= 5)
++    {
++        BYTE hash[32];
++        ok = sha256( "CredSSP Server-To-Client Binding Hash", ctx->nonce, ctx->pubkey, ctx->pubkey_len, hash ) &&
++             plain.len == sizeof(hash) && !memcmp( plain.data, hash, sizeof(hash) );
++    }
++    else
++    {
++        ok = plain.len == ctx->pubkey_len && plain.len && plain.data[0] == (BYTE)(ctx->pubkey[0] + 1) &&
++             !memcmp( plain.data + 1, ctx->pubkey + 1, plain.len - 1 );
++    }
++    free_blob( &plain );
++    if (!ok) WARN( "server public key binding does not match\n" );
++    return ok ? SEC_E_OK : SEC_E_MUTUAL_AUTH_FAILED;
++}
++
++static SECURITY_STATUS map_error_code( ULONG code )
++{
++    switch (code)
++    {
++    case STATUS_LOGON_FAILURE:
++    case STATUS_WRONG_PASSWORD:
++    case STATUS_NO_SUCH_USER:
++        return SEC_E_LOGON_DENIED;
++    case STATUS_ACCOUNT_RESTRICTION:
++    case STATUS_INVALID_LOGON_HOURS:
++    case STATUS_INVALID_WORKSTATION:
++    case STATUS_ACCOUNT_DISABLED:
++    case STATUS_ACCOUNT_LOCKED_OUT:
++    case STATUS_ACCOUNT_EXPIRED:
++        return SEC_E_LOGON_DENIED;
++    case STATUS_PASSWORD_EXPIRED:
++    case STATUS_PASSWORD_MUST_CHANGE:
++        return SEC_E_NO_CREDENTIALS;
++    }
++    if ((code & 0xc0000000) == 0xc0000000) return HRESULT_FROM_NT( code );
++    return code;
++}
++
++/* Server authentication by certificate: the chain must be trusted and valid for the
++ * host name.  The caller (mstsc) queries the result with SECPKG_ATTR_SERVER_AUTH_FLAGS
++ * and SECPKG_ATTR_CERT_TRUST_STATUS and warns the user if the server is not
++ * authenticated. */
++static void verify_server_certificate( struct credssp_ctx *ctx, PCCERT_CONTEXT cert )
++{
++    CERT_CHAIN_PARA para = { sizeof(para) };
++    SSL_EXTRA_CERT_CHAIN_POLICY_PARA ssl = { { sizeof(ssl) } };
++    CERT_CHAIN_POLICY_PARA policy = { sizeof(policy) };
++    CERT_CHAIN_POLICY_STATUS status = { sizeof(status) };
++    PCCERT_CHAIN_CONTEXT chain;
++
++    ctx->server_auth = 0;
++    ctx->trust.dwErrorStatus = CERT_TRUST_IS_UNTRUSTED_ROOT;
++    ctx->trust.dwInfoStatus = 0;
++    if (!CertGetCertificateChain( NULL, cert, NULL, cert->hCertStore, &para, 0, NULL, &chain ))
++    {
++        WARN( "CertGetCertificateChain failed %lu\n", GetLastError() );
++        return;
++    }
++    ctx->trust = chain->TrustStatus;
++    ssl.dwAuthType = AUTHTYPE_SERVER;
++    ssl.pwszServerName = ctx->host;
++    policy.pvExtraPolicyPara = &ssl;
++    if (CertVerifyCertificateChainPolicy( CERT_CHAIN_POLICY_SSL, chain, &policy, &status ) && !status.dwError)
++        ctx->server_auth |= CREDSSP_SERVER_AUTH_CERTIFICATE;
++    else
++        TRACE( "server certificate not trusted: chain %#lx, policy %#lx\n", chain->TrustStatus.dwErrorStatus,
++               status.dwError );
++    CertFreeCertificateChain( chain );
++}
++
++static SECURITY_STATUS start_nego( struct credssp_ctx *ctx, struct blob *out )
++{
++    struct blob token = { 0 };
++    SECURITY_STATUS status;
++    PCCERT_CONTEXT cert = NULL;
++
++    if ((status = QueryContextAttributesW( &ctx->tls, SECPKG_ATTR_STREAM_SIZES, &ctx->sizes ))) return status;
++    if ((status = QueryContextAttributesW( &ctx->tls, SECPKG_ATTR_REMOTE_CERT_CONTEXT, &cert ))) return status;
++    verify_server_certificate( ctx, cert );
++    ctx->pubkey_len = cert->pCertInfo->SubjectPublicKeyInfo.PublicKey.cbData;
++    if (!(ctx->pubkey = malloc( ctx->pubkey_len ))) { CertFreeCertificateContext( cert ); return SEC_E_INSUFFICIENT_MEMORY; }
++    memcpy( ctx->pubkey, cert->pCertInfo->SubjectPublicKeyInfo.PublicKey.pbData, ctx->pubkey_len );
++    CertFreeCertificateContext( cert );
++    if (BCryptGenRandom( NULL, ctx->nonce, sizeof(ctx->nonce), BCRYPT_USE_SYSTEM_PREFERRED_RNG ))
++        return SEC_E_INTERNAL_ERROR;
++
++    if (!ctx->cred->have_nego) return SEC_E_NO_CREDENTIALS;
++    if ((status = nego_step( ctx, NULL, 0, &token ))) return status;
++    if (ctx->nego_done)
++    {
++        FIXME( "Negotiate completed in one leg\n" );
++        free_blob( &token );
++        return SEC_E_INTERNAL_ERROR;
++    }
++    ctx->version = CREDSSP_VERSION;
++    status = send_ts_request( ctx, &token, NULL, NULL, FALSE, out );
++    free_blob( &token );
++    if (!status) ctx->state = STATE_NEGO;
++    return status;
++}
++
++/* handles one complete TSRequest from the server */
++static SECURITY_STATUS process_ts_request( struct credssp_ctx *ctx, const struct ts_request *req, struct blob *out )
++{
++    struct blob token = { 0 }, auth = { 0 }, creds = { 0 }, info = { 0 };
++    SECURITY_STATUS status;
++
++    if (req->version < 2)
++    {
++        WARN( "unsupported server version %lu\n", req->version );
++        return SEC_E_UNSUPPORTED_FUNCTION;
++    }
++    ctx->version = min( ctx->version, req->version );
++    if (req->has_error)
++    {
++        WARN( "server reported error %#lx\n", req->error );
++        return map_error_code( req->error );
++    }
++
++    if (ctx->state == STATE_NEGO)
++    {
++        if (!req->nego_token.len) return SEC_E_INVALID_TOKEN;
++        if ((status = nego_step( ctx, req->nego_token.p, req->nego_token.len, &token ))) return status;
++        if (ctx->nego_done)
++        {
++            if ((status = make_pubkey_auth( ctx, &auth ))) goto done;
++            status = send_ts_request( ctx, &token, NULL, &auth, ctx->version >= 5, out );
++            if (!status) ctx->state = STATE_PUBKEY;
++        }
++        else status = send_ts_request( ctx, &token, NULL, NULL, FALSE, out );
++        goto done;
++    }
++
++    /* STATE_PUBKEY */
++    if (req->nego_token.len && !ctx->nego_done)
++    {
++        if ((status = nego_step( ctx, req->nego_token.p, req->nego_token.len, &token ))) goto done;
++        free_blob( &token );
++    }
++    if (!req->pubkey_auth.len) return SEC_E_INVALID_TOKEN;
++    if ((status = check_pubkey_auth( ctx, &req->pubkey_auth ))) goto done;
++    if (!ctx->cred->password)
++    {
++        FIXME( "no password to delegate\n" );
++        status = SEC_E_NO_CREDENTIALS;
++        goto done;
++    }
++    if (!build_ts_credentials( ctx->cred, &creds )) { status = SEC_E_INSUFFICIENT_MEMORY; goto done; }
++    status = nego_encrypt( ctx, creds.data, creds.len, &info );
++    SecureZeroMemory( creds.data, creds.len );
++    free_blob( &creds );
++    if (status) goto done;
++    status = send_ts_request( ctx, NULL, &info, NULL, FALSE, out );
++    if (!status) ctx->state = STATE_DONE;
++
++done:
++    free_blob( &token );
++    free_blob( &auth );
++    if (info.data) SecureZeroMemory( info.data, info.len );
++    free_blob( &info );
++    return status;
++}
++
++/* Decrypts complete TLS records from in; leftover bytes are reported as SECBUFFER_EXTRA. */
++static SECURITY_STATUS receive_ts_request( struct credssp_ctx *ctx, PSecBufferDesc in, struct blob *out )
++{
++    SecBuffer *tok = find_buffer( in, SECBUFFER_TOKEN ), *extra = NULL;
++    BYTE *data;
++    DWORD len, used = 0;
++    SECURITY_STATUS status = SEC_E_OK;
++
++    if (!tok || !tok->cbBuffer) return SEC_E_INCOMPLETE_MESSAGE;
++    data = tok->pvBuffer;
++    len = tok->cbBuffer;
++    if (in->cBuffers > 1) extra = &in->pBuffers[1];
++
++    /* the first record must be complete */
++    if (len < 5 || len < 5 + ((data[3] << 8) | data[4])) return SEC_E_INCOMPLETE_MESSAGE;
++
++    while (used + 5 <= len && used + 5 + ((data[used + 3] << 8) | data[used + 4]) <= len)
++    {
++        DWORD rec = 5 + ((data[used + 3] << 8) | data[used + 4]);
++        SecBuffer bufs[4];
++        SecBufferDesc desc = { SECBUFFER_VERSION, 4, bufs };
++        BYTE *copy, *grown;
++        ULONG i;
++
++        if (!(copy = malloc( rec ))) return SEC_E_INSUFFICIENT_MEMORY;
++        memcpy( copy, data + used, rec );
++        bufs[0].BufferType = SECBUFFER_DATA; bufs[0].cbBuffer = rec; bufs[0].pvBuffer = copy;
++        for (i = 1; i < 4; i++) { bufs[i].BufferType = SECBUFFER_EMPTY; bufs[i].cbBuffer = 0; bufs[i].pvBuffer = NULL; }
++        status = DecryptMessage( &ctx->tls, &desc, 0, NULL );
++        if (status != SEC_E_OK)
++        {
++            free( copy );
++            WARN( "DecryptMessage failed %#lx\n", status );
++            return status == SEC_I_CONTEXT_EXPIRED ? SEC_E_CONTEXT_EXPIRED : status;
++        }
++        used += rec;
++        for (i = 0; i < 4; i++)
++        {
++            if (bufs[i].BufferType != SECBUFFER_DATA || !bufs[i].cbBuffer) continue;
++            if (!(grown = realloc( ctx->plain, ctx->plain_len + bufs[i].cbBuffer ))) { free( copy ); return SEC_E_INSUFFICIENT_MEMORY; }
++            ctx->plain = grown;
++            memcpy( ctx->plain + ctx->plain_len, bufs[i].pvBuffer, bufs[i].cbBuffer );
++            ctx->plain_len += bufs[i].cbBuffer;
++        }
++        SecureZeroMemory( copy, rec );
++        free( copy );
++
++        /* process every complete TSRequest */
++        for (;;)
++        {
++            DWORD size = der_total_size( ctx->plain, ctx->plain_len );
++            struct ts_request req;
++
++            if (size == ~0u) return SEC_E_INVALID_TOKEN;
++            if (!size || size > ctx->plain_len) break;
++            if (!parse_ts_request( ctx->plain, size, &req )) return SEC_E_INVALID_TOKEN;
++            status = process_ts_request( ctx, &req, out );
++            memmove( ctx->plain, ctx->plain + size, ctx->plain_len - size );
++            ctx->plain_len -= size;
++            if (status) return status;
++            if (ctx->state == STATE_DONE) break;
++        }
++        if (ctx->state == STATE_DONE) break;
++    }
++
++    if (extra && used < len)
++    {
++        extra->BufferType = SECBUFFER_EXTRA;
++        extra->cbBuffer = len - used;
++    }
++    return SEC_E_OK;
++}
++
++/* ------------------------------------------------------------------ */
++/* SSPI entry points                                                   */
++
++static SECURITY_STATUS SEC_ENTRY credssp_AcquireCredentialsHandleW( SEC_WCHAR *principal, SEC_WCHAR *package,
++        ULONG use, PLUID logon_id, void *auth_data, SEC_GET_KEY_FN get_key, void *get_key_arg,
++        PCredHandle handle, PTimeStamp expiry )
++{
++    const CREDSSP_CRED *in = auth_data;
++    SCHANNEL_CRED schan = { SCHANNEL_CRED_VERSION };
++    SEC_WINNT_AUTH_IDENTITY_W id = { 0 };
++    struct credssp_cred *cred;
++    CREDSPP_SUBMIT_TYPE type = 0;
++    SECURITY_STATUS status;
++
++    TRACE( "(%s, %s, %#lx, %p, %p, %p, %p, %p, %p)\n", debugstr_w(principal), debugstr_w(package), use,
++           logon_id, auth_data, get_key, get_key_arg, handle, expiry );
++
++    if (!handle) return SEC_E_INVALID_HANDLE;
++    if (use != SECPKG_CRED_OUTBOUND)
++    {
++        FIXME( "credential use %#lx not supported\n", use );
++        return SEC_E_UNSUPPORTED_FUNCTION;
++    }
++    if (in && in->Type == CredsspCredEx)
++    {
++        const CREDSSP_CRED_EX *ex = auth_data;
++        if (ex->Flags) FIXME( "CREDSSP_CRED_EX flags %#lx\n", ex->Flags );
++        in = &ex->Cred;
++    }
++    if (in) type = in->Type;
++    TRACE( "submit type %u\n", type );
++    if (type == CredsspCertificateCreds)
++    {
++        FIXME( "smart card / certificate credentials not supported\n" );
++        return SEC_E_UNSUPPORTED_FUNCTION;
++    }
++
++    if (!(cred = calloc( 1, sizeof(*cred) ))) return SEC_E_INSUFFICIENT_MEMORY;
++    cred->magic = CREDSSP_CRED_MAGIC;
++
++    if (in && in->pSchannelCred && ((const SCHANNEL_CRED *)in->pSchannelCred)->dwVersion == SCHANNEL_CRED_VERSION)
++        schan = *(const SCHANNEL_CRED *)in->pSchannelCred;
++    /* the caller verifies the server certificate itself (SECPKG_ATTR_REMOTE_CERT_CONTEXT) */
++    schan.dwFlags |= SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_DEFAULT_CREDS;
++    status = AcquireCredentialsHandleW( NULL, (SEC_WCHAR *)UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &schan,
++                                        NULL, NULL, &cred->tls, NULL );
++    if (status)
++    {
++        WARN( "Schannel credentials failed %#lx\n", status );
++        memset( &cred->tls, 0, sizeof(cred->tls) );
++        free_cred( cred );
++        return status;
++    }
++
++    if (in && (status = parse_spnego_cred( type, in->pSpnegoCred, cred )))
++    {
++        free_cred( cred );
++        return status;
++    }
++
++    if (cred->user)
++    {
++        id.User = (unsigned short *)cred->user;
++        id.UserLength = wcslen( cred->user );
++        id.Domain = (unsigned short *)cred->domain;
++        id.DomainLength = cred->domain ? wcslen( cred->domain ) : 0;
++        id.Password = (unsigned short *)cred->password;
++        id.PasswordLength = cred->password ? wcslen( cred->password ) : 0;
++        id.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
++    }
++    status = AcquireCredentialsHandleW( NULL, (SEC_WCHAR *)L"Negotiate", SECPKG_CRED_OUTBOUND, NULL,
++                                        cred->user ? &id : NULL, NULL, NULL, &cred->nego, NULL );
++    if (status) WARN( "Negotiate credentials failed %#lx\n", status );
++    else cred->have_nego = TRUE;
++
++    handle->dwLower = (ULONG_PTR)cred;
++    handle->dwUpper = 0;
++    if (expiry) expiry->LowPart = expiry->HighPart = 0xffffffff;
++    return SEC_E_OK;
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_FreeCredentialsHandle( PCredHandle handle )
++{
++    struct credssp_cred *cred = get_cred( handle );
++
++    TRACE( "(%p)\n", handle );
++    if (!cred) return SEC_E_INVALID_HANDLE;
++    free_cred( cred );
++    return SEC_E_OK;
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_QueryCredentialsAttributesW( PCredHandle handle, ULONG attr, void *buf )
++{
++    FIXME( "(%p, %lu, %p) stub\n", handle, attr, buf );
++    return SEC_E_UNSUPPORTED_FUNCTION;
++}
++
++static void free_ctx( struct credssp_ctx *ctx )
++{
++    if (ctx->tls_valid) DeleteSecurityContext( &ctx->tls );
++    if (ctx->nego_valid) DeleteSecurityContext( &ctx->nego );
++    free( ctx->spn );
++    free( ctx->host );
++    free( ctx->pubkey );
++    if (ctx->plain) SecureZeroMemory( ctx->plain, ctx->plain_len );
++    free( ctx->plain );
++    ctx->magic = 0;
++    free( ctx );
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_InitializeSecurityContextW( PCredHandle cred_handle, PCtxtHandle ctx_handle,
++        SEC_WCHAR *target, ULONG req, ULONG reserved1, ULONG data_rep, PSecBufferDesc in, ULONG reserved2,
++        PCtxtHandle new_ctx, PSecBufferDesc out, ULONG *attrs, PTimeStamp expiry )
++{
++    struct credssp_ctx *ctx;
++    struct blob output = { 0 };
++    SECURITY_STATUS status, out_status;
++
++    TRACE( "(%p, %p, %s, %#lx, %lu, %lu, %p, %lu, %p, %p, %p, %p)\n", cred_handle, ctx_handle, debugstr_w(target),
++           req, reserved1, data_rep, in, reserved2, new_ctx, out, attrs, expiry );
++
++    if (!ctx_handle)
++    {
++        struct credssp_cred *cred = get_cred( cred_handle );
++        const WCHAR *host;
++
++        if (!cred) return SEC_E_INVALID_HANDLE;
++        if (!(ctx = calloc( 1, sizeof(*ctx) ))) return SEC_E_INSUFFICIENT_MEMORY;
++        ctx->magic = CREDSSP_CTX_MAGIC;
++        ctx->cred = cred;
++        ctx->req = req;
++        ctx->version = CREDSSP_VERSION;
++        if (target)
++        {
++            ctx->spn = strdupW_len( target, wcslen( target ) );
++            host = wcschr( target, '/' );
++            host = host ? host + 1 : target;
++            ctx->host = strdupW_len( host, wcslen( host ) );
++            if (ctx->host && (host = wcschr( ctx->host, ':' ))) ctx->host[host - ctx->host] = 0;
++        }
++        if (target && (!ctx->spn || !ctx->host)) { free_ctx( ctx ); return SEC_E_INSUFFICIENT_MEMORY; }
++        if (!new_ctx) { free_ctx( ctx ); return SEC_E_INVALID_HANDLE; }
++        new_ctx->dwLower = (ULONG_PTR)ctx;
++        new_ctx->dwUpper = 0;
++    }
++    else if (!(ctx = get_ctx( ctx_handle ))) return SEC_E_INVALID_HANDLE;
++    else ctx->req = req;
++
++    switch (ctx->state)
++    {
++    case STATE_TLS:
++    {
++        SecBuffer tls_out = { 0, SECBUFFER_TOKEN, NULL };
++        SecBufferDesc tls_out_desc = { SECBUFFER_VERSION, 1, &tls_out };
++        ULONG tls_attrs;
++
++        status = InitializeSecurityContextW( &ctx->cred->tls, ctx->tls_valid ? &ctx->tls : NULL, ctx->host,
++                                             ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_STREAM |
++                                             ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT |
++                                             ISC_REQ_MANUAL_CRED_VALIDATION | ISC_REQ_EXTENDED_ERROR,
++                                             0, 0, ctx->tls_valid ? in : NULL, 0, &ctx->tls, &tls_out_desc,
++                                             &tls_attrs, NULL );
++        TRACE( "TLS step: %#lx, %lu bytes\n", status, tls_out.cbBuffer );
++        if (status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED && status != SEC_E_INCOMPLETE_MESSAGE)
++        {
++            if (tls_out.pvBuffer) FreeContextBuffer( tls_out.pvBuffer );
++            break;
++        }
++        ctx->tls_valid = TRUE;
++        if (tls_out.cbBuffer && tls_out.pvBuffer)
++        {
++            if ((output.data = malloc( tls_out.cbBuffer )))
++            {
++                memcpy( output.data, tls_out.pvBuffer, tls_out.cbBuffer );
++                output.len = tls_out.cbBuffer;
++            }
++            FreeContextBuffer( tls_out.pvBuffer );
++            if (!output.data) { status = SEC_E_INSUFFICIENT_MEMORY; break; }
++        }
++        if (status == SEC_E_OK)
++        {
++            if ((status = start_nego( ctx, &output ))) break;
++            status = SEC_I_CONTINUE_NEEDED;
++        }
++        break;
++    }
++    case STATE_NEGO:
++    case STATE_PUBKEY:
++        status = receive_ts_request( ctx, in, &output );
++        if (status == SEC_E_OK && ctx->state != STATE_DONE) status = SEC_I_CONTINUE_NEEDED;
++        break;
++    default:
++        status = SEC_E_INVALID_HANDLE;
++        break;
++    }
++
++    if (FAILED(status) && status != SEC_E_INCOMPLETE_MESSAGE)
++    {
++        WARN( "CredSSP failed in state %u: %#lx\n", ctx->state, status );
++        ctx->state = STATE_FAILED;
++        set_output( ctx, out, NULL, 0 );
++        free_blob( &output );
++        return status;
++    }
++    out_status = set_output( ctx, out, output.data, output.len );
++    if (output.data) SecureZeroMemory( output.data, output.len );
++    free_blob( &output );
++    if (out_status) return out_status;
++
++    if (attrs)
++    {
++        *attrs = ISC_RET_CONFIDENTIALITY | ISC_RET_SEQUENCE_DETECT | ISC_RET_REPLAY_DETECT | ISC_RET_STREAM |
++                 ISC_RET_MUTUAL_AUTH | ISC_RET_DELEGATE;
++        if (req & ISC_REQ_ALLOCATE_MEMORY) *attrs |= ISC_RET_ALLOCATED_MEMORY;
++        if (req & ISC_REQ_EXTENDED_ERROR) *attrs |= ISC_RET_EXTENDED_ERROR;
++    }
++    if (expiry) expiry->LowPart = expiry->HighPart = 0xffffffff;
++    TRACE( "returning %#lx, state %u\n", status, ctx->state );
++    return status;
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_DeleteSecurityContext( PCtxtHandle handle )
++{
++    struct credssp_ctx *ctx = get_ctx( handle );
++
++    TRACE( "(%p)\n", handle );
++    if (!ctx) return SEC_E_INVALID_HANDLE;
++    free_ctx( ctx );
++    return SEC_E_OK;
++}
++
++static const SecPkgInfoW credssp_info =
++{
++    SECPKG_FLAG_INTEGRITY | SECPKG_FLAG_PRIVACY | SECPKG_FLAG_CONNECTION | SECPKG_FLAG_MULTI_REQUIRED |
++    SECPKG_FLAG_EXTENDED_ERROR | SECPKG_FLAG_IMPERSONATION | SECPKG_FLAG_ACCEPT_WIN32_NAME |
++    SECPKG_FLAG_STREAM | SECPKG_FLAG_MUTUAL_AUTH | SECPKG_FLAG_DELEGATION,
++    1, SECPKG_ID_NONE, CREDSSP_MAX_TOKEN,
++    (SEC_WCHAR *)L"CREDSSP", (SEC_WCHAR *)L"Microsoft CredSSP Security Provider"
++};
++
++static SECURITY_STATUS SEC_ENTRY credssp_QueryContextAttributesW( PCtxtHandle handle, ULONG attr, void *buf )
++{
++    struct credssp_ctx *ctx = get_ctx( handle );
++
++    TRACE( "(%p, %#lx, %p)\n", handle, attr, buf );
++    if (!ctx) return SEC_E_INVALID_HANDLE;
++    if (!buf) return SEC_E_INVALID_PARAMETER;
++
++    if (attr == SECPKG_ATTR_PACKAGE_INFO)
++    {
++        SecPkgContext_PackageInfoW *info = buf;
++        return QuerySecurityPackageInfoW( (SEC_WCHAR *)L"CREDSSP", &info->PackageInfo );
++    }
++    if (attr == SECPKG_ATTR_SERVER_AUTH_FLAGS)
++    {
++        if (ctx->state != STATE_DONE) return SEC_E_INVALID_HANDLE;
++        ((SecPkgContext_Flags *)buf)->Flags = ctx->server_auth;
++        TRACE( "server auth flags %#lx\n", ctx->server_auth );
++        return SEC_E_OK;
++    }
++    if (attr == SECPKG_ATTR_CERT_TRUST_STATUS)
++    {
++        if (ctx->state != STATE_DONE) return SEC_E_INVALID_HANDLE;
++        *(CERT_TRUST_STATUS *)buf = ctx->trust;
++        return SEC_E_OK;
++    }
++    if (!ctx->tls_valid) return SEC_E_INVALID_HANDLE;
++    return QueryContextAttributesW( &ctx->tls, attr, buf );
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_EncryptMessage( PCtxtHandle handle, ULONG qop, PSecBufferDesc msg, ULONG seq )
++{
++    struct credssp_ctx *ctx = get_ctx( handle );
++
++    if (!ctx || ctx->state != STATE_DONE) return SEC_E_INVALID_HANDLE;
++    return EncryptMessage( &ctx->tls, qop, msg, seq );
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_DecryptMessage( PCtxtHandle handle, PSecBufferDesc msg, ULONG seq, ULONG *qop )
++{
++    struct credssp_ctx *ctx = get_ctx( handle );
++
++    if (!ctx || ctx->state != STATE_DONE) return SEC_E_INVALID_HANDLE;
++    return DecryptMessage( &ctx->tls, msg, seq, qop );
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_ApplyControlToken( PCtxtHandle handle, PSecBufferDesc input )
++{
++    struct credssp_ctx *ctx = get_ctx( handle );
++
++    TRACE( "(%p, %p)\n", handle, input );
++    if (!ctx || !ctx->tls_valid) return SEC_E_INVALID_HANDLE;
++    return ApplyControlToken( &ctx->tls, input );
++}
++
++static SECURITY_STATUS SEC_ENTRY credssp_EnumerateSecurityPackagesW( ULONG *count, PSecPkgInfoW *info )
++{
++    return SEC_E_UNSUPPORTED_FUNCTION;
++}
++
++static const SecurityFunctionTableW credssp_tableW =
++{
++    1,
++    credssp_EnumerateSecurityPackagesW,
++    credssp_QueryCredentialsAttributesW,
++    credssp_AcquireCredentialsHandleW,
++    credssp_FreeCredentialsHandle,
++    NULL, /* Reserved2 */
++    credssp_InitializeSecurityContextW,
++    NULL, /* AcceptSecurityContext */
++    NULL, /* CompleteAuthToken */
++    credssp_DeleteSecurityContext,
++    credssp_ApplyControlToken,
++    credssp_QueryContextAttributesW,
++    NULL, /* ImpersonateSecurityContext */
++    NULL, /* RevertSecurityContext */
++    NULL, /* MakeSignature */
++    NULL, /* VerifySignature */
++    FreeContextBuffer,
++    NULL, /* QuerySecurityPackageInfoW */
++    NULL, /* Reserved3 */
++    NULL, /* Reserved4 */
++    NULL, /* ExportSecurityContext */
++    NULL, /* ImportSecurityContextW */
++    NULL, /* AddCredentialsW */
++    NULL, /* Reserved8 */
++    NULL, /* QuerySecurityContextToken */
++    credssp_EncryptMessage,
++    credssp_DecryptMessage,
++    NULL, /* SetContextAttributesW */
++};
++
++void SECUR32_initCredSSPSP(void)
++{
++    SecureProvider *provider = SECUR32_addProvider( NULL, &credssp_tableW, NULL );
++
++    if (!provider)
++    {
++        ERR( "failed to add CredSSP provider\n" );
++        return;
++    }
++    SECUR32_addPackages( provider, 1, NULL, &credssp_info );
++}
+diff --git a/dlls/secur32/secur32.c b/dlls/secur32/secur32.c
+index f757ea6..6571c82 100644
+--- a/dlls/secur32/secur32.c
++++ b/dlls/secur32/secur32.c
+@@ -499,6 +499,7 @@ static void SECUR32_initializeProviders(void)
+     TRACE("\n");
+     /* First load built-in providers */
+     SECUR32_initSchannelSP();
++    SECUR32_initCredSSPSP();
+     /* Load SSP/AP packages (Kerberos and others) */
+     load_auth_packages();
+     /* Now load providers from registry */
+diff --git a/dlls/secur32/secur32_priv.h b/dlls/secur32/secur32_priv.h
+index ff91905..0a68c2f 100644
+--- a/dlls/secur32/secur32_priv.h
++++ b/dlls/secur32/secur32_priv.h
+@@ -72,6 +72,7 @@ SecurePackage *SECUR32_findPackageA(PCSTR packageName);
+ 
+ /* Initialization functions for built-in providers */
+ void SECUR32_initSchannelSP(void);
++void SECUR32_initCredSSPSP(void);
+ void load_auth_packages(void);
+ NTSTATUS NTAPI nego_SpLsaModeInitialize(ULONG, PULONG, PSECPKG_FUNCTION_TABLE *, PULONG);
+ NTSTATUS NTAPI nego_SpUserModeInitialize(ULONG, PULONG, PSECPKG_USER_FUNCTION_TABLE *, PULONG);
+-- 
+2.47.3
+
