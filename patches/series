@@ -13,3 +13,4 @@
 0013-advapi32-Implement-CredProtectW-CredUnprotectW-and-C.patch
 0014-credui-Implement-CredUIPromptForWindowsCredentialsW-.patch
 0015-secur32-Add-a-CredSSP-client-security-package.patch
+0016-winex11-Release-fullscreen-cursor-clipping-when-a-wi.patch

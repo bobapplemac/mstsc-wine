@@ -8,6 +8,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 : "${DISPLAY:?run inside the nested display (tests/lib/xephyr.sh start :5)}"
 export MSTSC_WINE_DLLOVERRIDES=${MSTSC_WINE_DLLOVERRIDES:-winedbg.exe=d}
 export MSTSC_WINE_TRACE='+winsock'   # fake .invalid hostname only; no credentials involved
+export MSTSC_WINE_TEST_TAG=connect-invalid-$$   # lets cleanup stop only this test's mstsc
 timeout 40 "$ROOT/launcher/mstsc-wine" /v:rdp-test.invalid >/dev/null 2>&1 &
 pid=$!
 log=""
@@ -23,5 +24,9 @@ else echo "FAIL connect: target name was never resolved"; fails=1; fi
 if [[ -n $log ]] && grep -aq 'unimplemented function' "$log"; then
     echo "FAIL connect: $(grep -a -m1 -o 'unimplemented function [^ ,]*' "$log")"; fails=1
 else echo "ok   connect: no unimplemented function called"; fi
-pkill -f '^C:.windows.system32.mstsc' 2>/dev/null; wait $pid 2>/dev/null
+# stop only the mstsc started here, never other sessions on the same display or prefix
+for p in $(pgrep -f 'mstsc\.exe'); do
+    tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx "MSTSC_WINE_TEST_TAG=$MSTSC_WINE_TEST_TAG" && kill $p
+done
+wait $pid 2>/dev/null
 echo "$fails failure(s)"; exit $fails

@@ -219,3 +219,16 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   fixture verifies the raw blob instead.
 - Native credssp/tspkg are not viable under Wine (ADR-0018).
 - CredProtect in Wine is encoding only (ADR-0017).
+
+## R-020 Fullscreen pointer grab and window managers (V/I)
+- Wine clips the cursor to the monitor for a foreground fullscreen window. On X11 this is
+  a pointer grab on an InputOnly clip window (V). Before patch 0016 it outlived the
+  fullscreen state while the window stayed visible (V, EXP-033).
+- Wine only grabs while X focus is on one of its windows. In a nested Xephyr without a
+  window manager the focus check fails for a fresh process, so fixtures need a WM (V).
+- Whether a stale grab is visible depends on the WM. Muffin kept the grab and ignored frame
+  clicks; metacity runs recovered (I: focus change resets the clip).
+- A local RDP *server* (FreeRDP shadow server sharing a private Xvfb, with a SAM-file NLA
+  account) is a usable offline endpoint for client-side GUI behaviour. It does not replace
+  a Windows host for protocol or feature fidelity (V for window behaviour, H otherwise).
+

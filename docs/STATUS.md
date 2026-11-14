@@ -24,7 +24,8 @@ _Last updated: 2026-11-14_
   exports), `mui-config.py`, `xshot.py`, `build-wine.sh`.
 - Launcher `launcher/mstsc-wine`: init/import/run/exec/doctor/--version, hash-verified
   component store, private prefix, redacted deterministic logs.
-- Tests: regression A/B suite (incl. CredSSP client), launcher isolation test, server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end (`tests/security/credssp/run.sh`; needs `python3-pyspnego`).
+- Tests: regression A/B suite (incl. CredSSP client), launcher isolation test, server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize end-to-end (`tests/launch/test-fullscreen-restore.sh`, local RDP server endpoint).
+- Fullscreen → windowed: Restore then Maximize works under muffin and metacity (patch 0016, ADR-0019). KDE/XWayland still to test.
 
 ## Blockers (need human input)
 1. A domain-joined test host (Kerberos) when available. The current host covers NLA with NTLM.
@@ -33,6 +34,5 @@ _Last updated: 2026-11-14_
 ## Next actions
 1. NLA follow-ups: "Remember my password" (`CredWriteDomainCredentialsW`), Kerberos/domain host, wrong-password re-prompt UX, server with NLA *required*.
 2. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-3. Connection-bar restore/maximize leaves the window unusable (EXP-024): reproduce under a real WM.
-4. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
-5. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.
+3. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
+4. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.

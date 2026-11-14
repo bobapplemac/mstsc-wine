@@ -7,7 +7,15 @@ from Xlib import display
 d = display.Display(sys.argv[1]); pat = re.compile(sys.argv[2])
 deadline = time.time() + (float(sys.argv[3]) if len(sys.argv) > 3 else 30)
 while time.time() < deadline:
-    for w in d.screen().root.query_tree().children:
+    # Top-level windows, plus their children (client windows reparented by a window manager).
+    tops = d.screen().root.query_tree().children
+    cands = list(tops)
+    for t in tops:
+        try:
+            cands += t.query_tree().children
+        except Exception:
+            pass
+    for w in cands:
         try:
             name = w.get_wm_name()
             if name and pat.search(name) and w.get_attributes().map_state:

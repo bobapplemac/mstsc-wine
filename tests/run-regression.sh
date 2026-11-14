@@ -38,6 +38,9 @@ check "schannel: RDP-style server cert (no digitalSignature)" $exp_fix env ${LDP
 CSSP=$ROOT/artifacts/credssp-client
 "$ROOT/tests/static/credssp-client/build.sh" "$CSSP" >/dev/null 2>&1 || { echo "credssp fixture build failed"; exit 1; }
 check "credssp: NLA client (delegation, server auth flags, bad password)" $exp_fix env ${LDP:+LD_LIBRARY_PATH=$LDP} "$ROOT/tests/static/credssp-client/run.sh" "$W" "$CSSP"
+FSC=$ROOT/artifacts/fullscreen-clip
+"$ROOT/tests/static/fullscreen-clip/build.sh" "$FSC" >/dev/null 2>&1 || { echo "fullscreen-clip fixture build failed"; exit 1; }
+check "winex11: leaving fullscreen releases the pointer grab" $exp_fix "$ROOT/tests/static/fullscreen-clip/run.sh" "$W" "$FSC"
 check "user32: ordinal 2598 callable"         $exp_fix "$W" "$ORD/ord2598.exe"
 if [[ -f $ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe ]]; then
     check "devobj: conformance test"           pass "$W" "$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe" devobj
