@@ -7,3 +7,5 @@
 0007-ws2_32-Implement-NS_NLA-network-enumeration-in-WSALo.patch
 0008-advapi32-Return-ERROR_NOT_FOUND-from-CredReadW-for-a.patch
 0009-msxml3-Implement-IXMLDOMAttribute-put_nodeTypedValue.patch
+0010-secur32-Tolerate-server-certificate-key-usage-violat.patch
+0011-secur32-Support-SECPKG_ATTR_PACKAGE_INFO-in-Schannel.patch

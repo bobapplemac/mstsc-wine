@@ -1,0 +1,14 @@
+--- a/lib/priority.c
++++ b/lib/priority.c
+@@ -815,6 +815,11 @@
+ static void enable_server_key_usage_violations(gnutls_priority_t c)
+ {
+ 	c->allow_server_key_usage_violation = 1;
++	/* mstsc-wine: also tolerate a peer certificate whose key usage lacks
++	 * digitalSignature (e.g. default Remote Desktop server certificates used
++	 * with ECDHE_RSA), without the other %COMPAT relaxations.  Copied into
++	 * session->internals.allow_key_usage_violation by gnutls_priority_set(). */
++	c->_allow_key_usage_violation = 1;
+ }
+ 
+ static void enable_allow_small_records(gnutls_priority_t c)

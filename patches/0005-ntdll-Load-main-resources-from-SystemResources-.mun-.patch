@@ -1,7 +1,7 @@
 From c9dbe4ff0fa9fc3ecc2a26a71aaf7d635db8207a Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:06:30 -0500
-Subject: [PATCH 5/9] ntdll: Load main resources from SystemResources .mun
+Subject: [PATCH 05/11] ntdll: Load main resources from SystemResources .mun
  files.
 
 Windows 10 1903 and later move the non-localizable resources (icons,

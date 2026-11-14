@@ -1,0 +1,78 @@
+From c318443e1210299bfdb2df2ecf856a621235ba7c Mon Sep 17 00:00:00 2001
+From: "Andrew J. Moore" <andrew@forevermoore.net>
+Date: Sat, 14 Nov 2026 10:45:21 -0500
+Subject: [PATCH 11/11] secur32: Support SECPKG_ATTR_PACKAGE_INFO in Schannel
+ QueryContextAttributes.
+
+Return the Schannel package information, allocated as by
+QuerySecurityPackageInfo and freed with FreeContextBuffer.  The Remote
+Desktop client queries it after the TLS handshake and aborts with
+SEC_E_UNSUPPORTED_FUNCTION otherwise.
+---
+ dlls/secur32/schannel.c       | 13 +++++++++++++
+ dlls/secur32/tests/schannel.c | 11 +++++++++++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/dlls/secur32/schannel.c b/dlls/secur32/schannel.c
+index 3ad6be5..0aea8b4 100644
+--- a/dlls/secur32/schannel.c
++++ b/dlls/secur32/schannel.c
+@@ -1307,6 +1307,11 @@ static SECURITY_STATUS SEC_ENTRY schan_QueryContextAttributesW(
+         struct get_cipher_info_params params = { ctx->session, info };
+         return GNUTLS_CALL( get_cipher_info, &params );
+     }
++    case SECPKG_ATTR_PACKAGE_INFO:
++    {
++        SecPkgContext_PackageInfoW *info = buffer;
++        return QuerySecurityPackageInfoW( (SEC_WCHAR *)UNISP_NAME_W, &info->PackageInfo );
++    }
+     default:
+         FIXME("Unhandled attribute %#lx\n", attribute);
+         return SEC_E_UNSUPPORTED_FUNCTION;
+@@ -1340,6 +1345,14 @@ static SECURITY_STATUS SEC_ENTRY schan_QueryContextAttributesA(
+     case SECPKG_ATTR_CIPHER_INFO:
+         return schan_QueryContextAttributesW(context_handle, attribute, buffer);
+ 
++    case SECPKG_ATTR_PACKAGE_INFO:
++    {
++        SecPkgContext_PackageInfoA *info = buffer;
++        if (!context_handle || !schan_get_object(context_handle->dwLower, SCHAN_HANDLE_CTX))
++            return SEC_E_INVALID_HANDLE;
++        return QuerySecurityPackageInfoA( (SEC_CHAR *)UNISP_NAME_A, &info->PackageInfo );
++    }
++
+     default:
+         FIXME("Unhandled attribute %#lx\n", attribute);
+         return SEC_E_UNSUPPORTED_FUNCTION;
+diff --git a/dlls/secur32/tests/schannel.c b/dlls/secur32/tests/schannel.c
+index 2f693c6..b3652f6 100644
+--- a/dlls/secur32/tests/schannel.c
++++ b/dlls/secur32/tests/schannel.c
+@@ -995,6 +995,7 @@ static void test_communication(void)
+     SecPkgContext_StreamSizes sizes;
+     SecPkgContext_ConnectionInfo conn_info;
+     SecPkgContext_KeyInfoA key_info;
++    SecPkgContext_PackageInfoW pkg_info;
+     const CERT_CONTEXT *cert;
+     CRYPT_DATA_BLOB pfx;
+     HCERTSTORE store;
+@@ -1315,6 +1316,16 @@ static void test_communication(void)
+     status = QueryContextAttributesA(&context, SECPKG_ATTR_STREAM_SIZES, &sizes);
+     ok(status == SEC_E_OK, "QueryContextAttributesW(SECPKG_ATTR_STREAM_SIZES) failed: %08lx\n", status);
+ 
++    pkg_info.PackageInfo = NULL;
++    status = QueryContextAttributesW(&context, SECPKG_ATTR_PACKAGE_INFO, &pkg_info);
++    ok(status == SEC_E_OK, "QueryContextAttributesW(SECPKG_ATTR_PACKAGE_INFO) failed: %08lx\n", status);
++    if (status == SEC_E_OK)
++    {
++        ok(pkg_info.PackageInfo != NULL, "got NULL package info\n");
++        ok(!lstrcmpW(pkg_info.PackageInfo->Name, UNISP_NAME_W), "got name %s\n", wine_dbgstr_w(pkg_info.PackageInfo->Name));
++        FreeContextBuffer(pkg_info.PackageInfo);
++    }
++
+     status = QueryContextAttributesA(&context, SECPKG_ATTR_NEGOTIATION_INFO, &info);
+     ok(status == SEC_E_UNSUPPORTED_FUNCTION, "QueryContextAttributesA returned %08lx\n", status);
+ 
+-- 
+2.47.3
+

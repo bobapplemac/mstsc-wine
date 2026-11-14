@@ -59,6 +59,10 @@ setup_env() {
     local ov="winemenubuilder.exe=d;mscoree=d;mshtml=d"
     export WINEDLLOVERRIDES="$ov${MSTSC_WINE_DLLOVERRIDES:+;$MSTSC_WINE_DLLOVERRIDES}"
     export WINEDEBUG="err+all,fixme-all${MSTSC_WINE_TRACE:+,$MSTSC_WINE_TRACE}"   # opt-in channels last so they win
+    # Private libraries shipped with the runtime (patched GnuTLS, ADR-0013) take precedence.
+    if [[ -e "$RUNTIME/lib/mstsc-wine/libgnutls.so.30" ]]; then
+        export LD_LIBRARY_PATH="$RUNTIME/lib/mstsc-wine${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    fi
     case "$MSTSC_WINE_BACKEND" in
         auto|x11) ;;               # winex11 on X11 or XWayland (default driver order)
         wayland) note "wayland backend is experimental";;
@@ -231,6 +235,9 @@ cmd_doctor() {
     for l in libgnutls.so.30 libgssapi_krb5.so.2 libpulse.so.0 libX11.so.6 libfreetype.so.6 libfontconfig.so.1; do
         ldconfig -p | grep -q "$l " || { echo "missing host library: $l"; ok=0; }
     done
+    if [[ -e "$RUNTIME/lib/mstsc-wine/libgnutls.so.30" ]]; then echo "gnutls:    bundled (accepts default RDP server certificates)"
+    else echo "gnutls:    system (servers with default RDP certificates will fail TLS; see ADR-0013)"; fi
+    command -v ntlm_auth >/dev/null && echo "ntlm_auth: $(command -v ntlm_auth)" || echo "ntlm_auth: missing (NTLM logon unavailable; install winbind)"
     [[ $ok == 1 ]] && echo "doctor: OK" || { echo "doctor: problems found"; exit 1; }
 }
 

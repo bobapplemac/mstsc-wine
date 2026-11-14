@@ -2,14 +2,15 @@
 
 _Last updated: 2026-11-14_
 
-## Current milestone: M2 (genuine MSTSC launch): dialog renders with images and genuine fonts
+## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 
 | Milestone | State |
 |---|---|
 | M0 research inventory | **done**: binaries inspected and hashed, dependency closure analysed, required satellites identified |
 | M1 build foundation | **done**: pinned Wine 11.0 builds from source, both unmodified and patched; launcher; isolated prefix; benign PE runs |
-| M2 genuine MSTSC launch | **in progress**: genuine dialog renders with images and fonts (patches 0001–0009); mstscax registers and instantiates; Connect resolves the target and reports unreachable hosts the way Windows does |
-| M3–M8 | not started; M3 also needs a Windows RDP test endpoint |
+| M2 genuine MSTSC launch | **done**: genuine dialog renders with images and fonts (patches 0001–0009); mstscax registers and instantiates; Connect resolves the target and reports unreachable hosts the way Windows does |
+| M3 connection | **in progress**: TLS session to a Windows host works (EXP-023); NLA/CredSSP, certificate prompt, NTLM pending |
+| M4–M8 | not started |
 
 ## Completed
 - Environment inventory: LMDE 7 / Debian 13 base, Cinnamon **X11** (not the KDE/Wayland
@@ -30,11 +31,9 @@ _Last updated: 2026-11-14_
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-0. TLS to real RDP servers: build a patched GnuTLS (R-016), add Wine Schannel client opt-in, then retest
-   `<test-host>` (certificate prompt, then NLA/CredSSP and NTLM; `ntlm_auth` from `winbind` needed).
-1. M3: the operator is setting up the endpoint (checklist: `docs/test-endpoint.md`). Next is TLS/CredSSP,
-   logon and graphics. The local error paths (refused, hang-up after X.224) already match Windows (EXP-019/020).
-2. (done) local error-path checks.
-3. Investigate the truncated "Show Options" label (text metrics or DPI).
-4. Packaging: Wine Mono is not needed (R-012); keep `mscoree=d`. Decide on bundling wine-gecko offline only if Help/HTML is in scope.
-5. Import-gap backlog (R-006).
+1. CredSSP/NLA in Wine ([MS-CSSP] over Schannel + NTLM via `ntlm_auth`); test with NLA enforced on the server.
+2. Certificate prompt: untrusted certificate (expect genuine prompt, accept or reject), valid certificate (no prompt).
+3. Connection-bar restore/maximize leaves the window unusable (EXP-024): reproduce under a real WM.
+4. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
+5. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.
+6. Disk: the build host is near full (about 2.5 GB free); prune `build/wine-11.0` objects if space is needed.

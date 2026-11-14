@@ -1,7 +1,7 @@
 From 562246746b1b812abd70c6f0517e78cbd10984b9 Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:22:32 -0500
-Subject: [PATCH 7/9] ws2_32: Implement NS_NLA network enumeration in
+Subject: [PATCH 07/11] ws2_32: Implement NS_NLA network enumeration in
  WSALookupServiceW.
 
 WSALookupServiceBeginW/NextW/End were stubs.  The Remote Desktop client

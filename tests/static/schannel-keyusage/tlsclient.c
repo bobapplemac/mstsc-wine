@@ -3,7 +3,8 @@
  * Connects to 127.0.0.1:PORT and completes a TLS 1.2 client handshake with the
  * credential flags the Remote Desktop client uses (manual certificate validation).
  * Exit 0 when the handshake completes.  Used with a server whose certificate has
- * keyUsage keyEncipherment only (like default RDP self-signed certificates). */
+ * keyUsage keyEncipherment only (like default RDP self-signed certificates),
+ * then queries SECPKG_ATTR_PACKAGE_INFO as the Remote Desktop client does. */
 #define SECURITY_WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -59,7 +60,19 @@ int main(int argc, char **argv)
             send(s, ob[0].pvBuffer, ob[0].cbBuffer, 0);
             FreeContextBuffer(ob[0].pvBuffer);
         }
-        if (st == SEC_E_OK) { printf("PASS handshake complete\n"); return 0; }
+        if (st == SEC_E_OK)
+        {
+            SecPkgContext_PackageInfoW pkg = { NULL };
+            st = QueryContextAttributesW(&ctx, SECPKG_ATTR_PACKAGE_INFO, &pkg);
+            if (st != SEC_E_OK || !pkg.PackageInfo || lstrcmpW(pkg.PackageInfo->Name, UNISP_NAME_W))
+            {
+                printf("FAIL QueryContextAttributes(PACKAGE_INFO) %#lx\n", st);
+                return 5;
+            }
+            FreeContextBuffer(pkg.PackageInfo);
+            printf("PASS handshake complete, package %ls\n", UNISP_NAME_W);
+            return 0;
+        }
         if (st == SEC_E_INCOMPLETE_MESSAGE || st == SEC_I_CONTINUE_NEEDED)
         {
             if (st == SEC_I_CONTINUE_NEEDED)

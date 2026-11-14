@@ -187,3 +187,15 @@ accept that downgrade. Instead, ship a patched GnuTLS whose only change exposes 
 peer-key-usage exemption on its own, enabled by Wine's Schannel for client sessions only.
 Built from Debian's `gnutls28 3.8.9-3+deb13u4` source so it matches the system library's
 security patches.
+
+## R-017 First session; remaining security gaps (V/H)
+With patches 0010–0011 and the bundled GnuTLS, mstsc completes TLS and runs a full session
+(EXP-023). The logon happened inside the session (server NLA not enforced). Still missing for
+Phase 1:
+- **CredSSP/NLA:** Wine has no `CREDSSP` package. mstsc probes it with
+  `QuerySecurityPackageInfoW(L"CREDSSP")`. Plan: implement [MS-CSSP] in Wine over Schannel
+  plus Negotiate/NTLM (`ntlm_auth` is now installed). Operator preference: either Wine or
+  native is fine; Wine is recommended (H: native tspkg/credssp need LSA infrastructure).
+- **Certificate prompt:** not observed yet. Check whether mstsc's own trust check ran and
+  passed silently, or wasn't reached (I). Test with an untrusted certificate (expect the
+  genuine prompt) and with a valid one (expect no prompt).
