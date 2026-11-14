@@ -26,6 +26,8 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-018 | 2026-11-14 | + 0009 | `/v:rdp-test.invalid` | `GetAddrInfoW("rdp-test.invalid","3389")`. **Genuine "Remote Desktop can't find the computer" dialog** (expected Windows behaviour) |
 | EXP-019 | 2026-11-14 | 0001–0009 | `/v:127.0.0.1:3390` (nothing listening) | `connect` refused. Genuine "Remote Desktop can't connect to the remote computer for one of these reasons…" dialog |
 | EXP-020 | 2026-11-14 | 0001–0009 | `/v:127.0.0.1:3391`, local listener that reads then closes | Client sent a 19-byte TPKT/X.224 Connection Request (`03 00 00 13`…), the first RDP PDU from the genuine stack. Genuine "This computer can't connect to the remote computer" dialog. No unimplemented functions |
+| EXP-021 | 2026-11-14 | 0001–0009 | `/v:<test-host>` (Windows, not domain-joined) | mstsc probes the `CREDSSP` package (absent in Wine) and falls back to Schannel TLS. The handshake fails: GnuTLS "Key usage violation". The server's default self-signed RDP certificate lacks digitalSignature, and the server picks ECDHE_RSA. mstsc shows "An authentication error has occurred. File not found." Reproduced locally with `tests/static/schannel-keyusage` (fails on baseline and patched) |
+| EXP-022 | 2026-11-14 | host GnuTLS 3.8.9 | Native probe of GnuTLS priority strings against the fixture server | `%DEBUG_ALLOW_KEY_USAGE_VIOLATIONS` covers only the local certificate (no effect for clients). `%COMPAT` passes but drops Extended Master Secret (EMS=0). Adding `%FORCE_SESSION_HASH` makes the handshake fail. **No priority string gives "accept peer key-usage violation" while keeping EMS** → patched GnuTLS needed (R-016) |
 
 ## Reproducible tests
 
@@ -39,6 +41,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | GUI driving | `tools/xclick.py :5 click X Y` / `type TEXT` / `key Return` (XTEST) | manual GUI steps in Xephyr |
 | Connect smoke (GUI) | `DISPLAY=:5 tests/launch/test-connect-invalid.sh` | patches 0006–0009 end to end |
 | ws2_32 / advapi32 / msxml3 conformance | `ws2_32_test.exe protocol`, `advapi32_test.exe cred`, `msxml3_test.exe domdoc` | patches 0007–0009 |
+| Schannel vs RDP-style certificate | `tests/static/schannel-keyusage/build.sh OUT && run.sh WINE OUT` | R-016 (currently fails on both runtimes) |
 | user32 #2598 | `wine artifacts/user32-ordinals/ord2598.exe` | patch 0003 |
 | shcore conformance | `wine build/wine-patched/dlls/shcore/tests/x86_64-windows/shcore_test.exe shcore` | patch 0004 |
 | Launcher isolation | `tests/launch/test-launcher-isolation.sh` | F-013, N-003 |

@@ -173,3 +173,17 @@ breakpoints on mstscax's 0xa08 sites (ADR-0012). With patches 0007–0009, Conne
 the target and shows the genuine "can't find the computer" error for `.invalid` hosts.
 mstscax's WPP tracing (the `testb $0x1,0x1c(%rax)` checks) is inert because Wine's ETW is
 stubbed. Enabling it would make future diagnosis much easier (idea, not planned).
+
+## R-016 TLS to servers with default RDP certificates (V/I)
+Default self-signed RDP certificates have keyUsage keyEncipherment + dataEncipherment only.
+Servers still pick ECDHE_RSA, which signs the key exchange with that key. GnuTLS rejects
+this (`GNUTLS_E_KEY_USAGE_VIOLATION`); Windows Schannel accepts it (I: mstsc works against
+such servers on Windows). Certificate *trust* is a separate check, done by mstsc (its
+certificate prompt). In GnuTLS 3.8.9 (`lib/tls-sig.c`), the peer-certificate exemption reads
+`session->internals.allow_key_usage_violation`. Only `%COMPAT` or
+`gnutls_session_enable_compatibility_mode()` set it, and both also disable Extended Master
+Secret and Encrypt-then-MAC (V, EXP-022). Decision (operator-approved, 2026-11-14): don't
+accept that downgrade. Instead, ship a patched GnuTLS whose only change exposes the
+peer-key-usage exemption on its own, enabled by Wine's Schannel for client sessions only.
+Built from Debian's `gnutls28 3.8.9-3+deb13u4` source so it matches the system library's
+security patches.

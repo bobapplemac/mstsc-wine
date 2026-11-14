@@ -30,6 +30,8 @@ _Last updated: 2026-11-14_
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
+0. TLS to real RDP servers: build a patched GnuTLS (R-016), add Wine Schannel client opt-in, then retest
+   `<test-host>` (certificate prompt, then NLA/CredSSP and NTLM; `ntlm_auth` from `winbind` needed).
 1. M3: the operator is setting up the endpoint (checklist: `docs/test-endpoint.md`). Next is TLS/CredSSP,
    logon and graphics. The local error paths (refused, hang-up after X.224) already match Windows (EXP-019/020).
 2. (done) local error-path checks.
