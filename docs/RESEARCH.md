@@ -199,3 +199,11 @@ Phase 1:
 - **Certificate prompt:** not observed yet. Check whether mstsc's own trust check ran and
   passed silently, or wasn't reached (I). Test with an untrusted certificate (expect the
   genuine prompt) and with a valid one (expect no prompt).
+
+## R-018 Default server-authentication level depends on CredSSP (V)
+mstsc probes `QuerySecurityPackageInfoW(L"CREDSSP")` at startup. Without the package it
+defaults to "Connect and don't warn me" and labels the option "If the actual verification
+does not meet minimum policy requirements". With the package, it defaults to "Warn me"
+(EXP-025, EXP-027). Wine's crypt32 verdicts are correct. The launcher seeds level 2 until
+CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), including
+"Don't ask me again" pinning (`CertHash`).
