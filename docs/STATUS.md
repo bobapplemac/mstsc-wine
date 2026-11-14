@@ -27,7 +27,7 @@ _Last updated: 2026-11-14_
 - Tests: regression A/B suite, launcher isolation test (all green).
 
 ## Blockers (need human input)
-1. **RDP test endpoint** for M3+: a disposable Windows host and a test account. Never production.
+1. A test host with **NLA enforced** (and later a domain-joined one) for CredSSP work. The current host is available (not domain-joined, NLA not enforced, operator signs in interactively).
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
