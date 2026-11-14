@@ -1,0 +1,7 @@
+#pragma code_page(65001)
+LANGUAGE 0x09, 0x01
+STRINGTABLE
+BEGIN
+    100 "Hello from MUI é中"
+END
+1 MUI "sat.muicfg"

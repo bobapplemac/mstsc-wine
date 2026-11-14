@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# mstsc-wine — launch the genuine Microsoft Remote Desktop Connection client
+# under an isolated Wine runtime.  This script never implements RDP itself.
+#
+# Subcommands:
+#   mstsc-wine [mstsc args...]          run mstsc.exe (default)
+#   mstsc-wine run [mstsc args...]      same as above
+#   mstsc-wine exec PROGRAM [args...]   run an arbitrary program in the prefix (dev/test)
+#   mstsc-wine init                     create/update the private prefix
+#   mstsc-wine import DIR               import operator-supplied Microsoft files
+#   mstsc-wine doctor                   environment checks
+#   mstsc-wine --version                full manifest report (no secrets)
+#
+# Environment (all optional):
+#   MSTSC_WINE_RUNTIME   directory containing bin/wine     (default: autodetect)
+#   MSTSC_WINE_HOME      data dir   (default: $XDG_DATA_HOME/mstsc-wine)
+#   MSTSC_WINE_PREFIX    WINEPREFIX (default: $MSTSC_WINE_HOME/prefix)
+#   MSTSC_WINE_STATE     logs dir   (default: $XDG_STATE_HOME/mstsc-wine)
+#   MSTSC_WINE_COMPONENTS component set dir (default: $MSTSC_WINE_HOME/components/current)
+#   MSTSC_WINE_TRACE     extra WINEDEBUG channels (opt-in; may expose sensitive data)
+#   MSTSC_WINE_BACKEND   auto|x11|wayland (default auto -> x11/XWayland)
+set -euo pipefail
+
+SELF_DIR=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+PROJECT_DIR=$(cd "$SELF_DIR/.." && pwd)
+VERSION=0.1.0-dev
+
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+: "${MSTSC_WINE_HOME:=$XDG_DATA_HOME/mstsc-wine}"
+: "${MSTSC_WINE_PREFIX:=$MSTSC_WINE_HOME/prefix}"
+: "${MSTSC_WINE_STATE:=$XDG_STATE_HOME/mstsc-wine}"
+: "${MSTSC_WINE_COMPONENTS:=$MSTSC_WINE_HOME/components/current}"
+: "${MSTSC_WINE_BACKEND:=auto}"
+
+die() { echo "mstsc-wine: error: $*" >&2; exit 1; }
+note() { echo "mstsc-wine: $*" >&2; }
+
+find_runtime() {
+    if [[ -n "${MSTSC_WINE_RUNTIME:-}" ]]; then echo "$MSTSC_WINE_RUNTIME"; return; fi
+    local c
+    for c in "$MSTSC_WINE_HOME/runtime/current" \
+             "$PROJECT_DIR/build/install-wine-patched"; do
+        [[ -x "$c/bin/wine" ]] && { echo "$c"; return; }
+    done
+    die "no Wine runtime found; set MSTSC_WINE_RUNTIME or run packaging/install.sh"
+}
+
+RUNTIME=$(find_runtime)
+WINE="$RUNTIME/bin/wine"
+WINESERVER="$RUNTIME/bin/wineserver"
+
+setup_env() {
+    # Isolation: never touch ~/.wine, never create host menu entries/file associations.
+    export WINEPREFIX="$MSTSC_WINE_PREFIX"
+    export WINEARCH=win64
+    unset WINELOADER WINEDLLPATH WINESERVER_PATH 2>/dev/null || true
+    # Disable Mono/Gecko install prompts and host desktop integration by winemenubuilder.
+    local ov="winemenubuilder.exe=d;mscoree=d;mshtml=d"
+    export WINEDLLOVERRIDES="$ov${MSTSC_WINE_DLLOVERRIDES:+;$MSTSC_WINE_DLLOVERRIDES}"
+    export WINEDEBUG="${MSTSC_WINE_TRACE:+$MSTSC_WINE_TRACE,}err+all,fixme-all"
+    case "$MSTSC_WINE_BACKEND" in
+        auto|x11) ;;               # winex11 on X11 or XWayland (default driver order)
+        wayland) note "wayland backend is experimental";;
+        *) die "unknown backend $MSTSC_WINE_BACKEND";;
+    esac
+    mkdir -p "$MSTSC_WINE_STATE/logs"
+}
+
+new_log() {
+    LOG="$MSTSC_WINE_STATE/logs/$(date +%Y%m%d-%H%M%S)-$1.log"
+    {
+        echo "# mstsc-wine $VERSION"
+        echo "# date: $(date -Is)"
+        echo "# runtime: $RUNTIME ($("$WINE" --version 2>/dev/null))"
+        echo "# prefix: $WINEPREFIX"
+        echo "# session: ${XDG_SESSION_TYPE:-?} desktop=${XDG_CURRENT_DESKTOP:-?} display=${DISPLAY:-} wayland=${WAYLAND_DISPLAY:-}"
+        echo "# WINEDEBUG=$WINEDEBUG"
+        echo "# WINEDLLOVERRIDES=$WINEDLLOVERRIDES"
+    } > "$LOG"
+}
+
+sys32() { echo "$WINEPREFIX/drive_c/windows/system32"; }
+
+cmd_init() {
+    setup_env
+    new_log init
+    if [[ ! -f "$WINEPREFIX/system.reg" ]]; then
+        note "creating prefix $WINEPREFIX"
+        mkdir -p "$WINEPREFIX"
+    fi
+    "$WINE" wineboot -u >>"$LOG" 2>&1 || die "wineboot failed (see $LOG)"
+    "$WINESERVER" -w
+    # Stop the prefix from symlinking into the user's real home folders
+    # (Desktop/Documents/...): avoids accidental pollution in both directions.
+    local u="$WINEPREFIX/drive_c/users/$USER"
+    for d in Desktop Documents Downloads Music Pictures Videos Templates; do
+        if [[ -L "$u/$d" ]]; then rm -f "$u/$d"; mkdir -p "$u/$d"; fi
+    done
+    install_components
+    "$WINESERVER" -w
+    note "prefix ready (log: $LOG)"
+}
+
+install_components() {
+    local c="$MSTSC_WINE_COMPONENTS"
+    if [[ ! -f "$c/manifest.sha256" ]]; then
+        note "no Microsoft component set imported yet ($c); run: mstsc-wine import DIR"
+        return 0
+    fi
+    (cd "$c" && sha256sum --quiet -c manifest.sha256) || die "component manifest mismatch in $c (fail closed)"
+    local f rel
+    while read -r _ rel; do
+        f="$c/$rel"
+        mkdir -p "$(dirname "$(sys32)/$rel")"
+        cp -f "$f" "$(sys32)/$rel"
+    done < "$c/manifest.sha256"
+    note "installed $(wc -l < "$c/manifest.sha256") Microsoft component file(s) into system32"
+}
+
+cmd_import() {
+    local src=${1:-}; [[ -d "$src" ]] || die "usage: mstsc-wine import DIR"
+    local tmp; tmp=$(mktemp -d "$MSTSC_WINE_HOME/.import.XXXX" 2>/dev/null || { mkdir -p "$MSTSC_WINE_HOME"; mktemp -d "$MSTSC_WINE_HOME/.import.XXXX"; })
+    (cd "$src" && find . -type f \( -iname '*.exe' -o -iname '*.dll' -o -iname '*.mui' -o -iname '*.ocx' \) -printf '%P\n') |
+        while read -r rel; do mkdir -p "$tmp/$(dirname "$rel")"; cp -p "$src/$rel" "$tmp/$rel"; done
+    (cd "$tmp" && find . -type f ! -name manifest.sha256 -printf '%P\n' | sort | xargs -r -d '\n' sha256sum > manifest.sha256)
+    [[ -s "$tmp/manifest.sha256" ]] || { rm -rf "$tmp"; die "no Microsoft files found in $src"; }
+    local ver="unknown"
+    if [[ -f "$tmp/mstsc.exe" ]]; then
+        ver=$(PYTHONPATH="$PROJECT_DIR/.deps/py${PYTHONPATH:+:$PYTHONPATH}" python3 "$PROJECT_DIR/tools/inspect-pe.py" --json "$tmp/mstsc.exe" 2>/dev/null |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["version"].get("FileVersionBinary","unknown"))' 2>/dev/null || echo unknown)
+    fi
+    local dest="$MSTSC_WINE_HOME/components/$ver"
+    rm -rf "$dest"; mkdir -p "$(dirname "$dest")"; mv "$tmp" "$dest"
+    ln -sfn "$ver" "$MSTSC_WINE_HOME/components/current"
+    note "imported component set $ver:"; sed 's/^/    /' "$dest/manifest.sha256" >&2
+}
+
+cmd_run() {
+    setup_env
+    [[ -f "$WINEPREFIX/system.reg" ]] || cmd_init
+    [[ -f "$(sys32)/mstsc.exe" ]] || die "mstsc.exe not installed in prefix; run: mstsc-wine import DIR && mstsc-wine init"
+    new_log mstsc
+    # Arguments are passed as an array; .rdp paths are converted to Windows paths.
+    local args=() a
+    for a in "$@"; do
+        if [[ -e "$a" && "$a" != /* && "$a" != -* ]] || [[ "$a" == /* && -e "$a" ]]; then
+            args+=("$("$WINE" winepath -w "$(readlink -f "$a")" 2>/dev/null)")
+        else
+            args+=("$a")
+        fi
+    done
+    echo "# argc: ${#args[@]}" >> "$LOG"   # never log argument values (may contain hostnames)
+    "$WINE" 'C:\windows\system32\mstsc.exe' "${args[@]}" >>"$LOG" 2>&1 &
+    local pid=$!
+    wait $pid; local rc=$?
+    echo "# exit: $rc" >> "$LOG"
+    exit $rc
+}
+
+cmd_exec() {
+    setup_env
+    [[ -f "$WINEPREFIX/system.reg" ]] || cmd_init
+    new_log exec
+    echo "# exec: $1" >> "$LOG"
+    set +e
+    "$WINE" "$@" >>"$LOG" 2>&1
+    local rc=$?
+    echo "# exit: $rc" >> "$LOG"
+    echo "$LOG"
+    exit $rc
+}
+
+cmd_doctor() {
+    setup_env
+    local ok=1
+    echo "runtime:   $RUNTIME ($("$WINE" --version))"
+    echo "prefix:    $WINEPREFIX $( [[ -f $WINEPREFIX/system.reg ]] && echo '(initialized)' || echo '(not initialized)')"
+    echo "session:   ${XDG_SESSION_TYPE:-unknown} / ${XDG_CURRENT_DESKTOP:-unknown}"
+    [[ -n "${DISPLAY:-}" ]] && echo "X display: $DISPLAY" || { echo "X display: MISSING (XWayland/X11 required)"; ok=0; }
+    if [[ -f "$MSTSC_WINE_COMPONENTS/manifest.sha256" ]]; then
+        if (cd "$MSTSC_WINE_COMPONENTS" && sha256sum --quiet -c manifest.sha256); then
+            echo "components: $(readlink -f "$MSTSC_WINE_COMPONENTS") (hashes OK)"
+        else echo "components: HASH MISMATCH"; ok=0; fi
+        for need in mstsc.exe mstscax.dll en-US/mstsc.exe.mui en-US/mstscax.dll.mui; do
+            [[ -f "$MSTSC_WINE_COMPONENTS/$need" ]] || { echo "  missing: $need"; ok=0; }
+        done
+    else echo "components: none imported"; ok=0; fi
+    for l in libgnutls.so.30 libgssapi_krb5.so.2 libpulse.so.0 libX11.so.6 libfreetype.so.6 libfontconfig.so.1; do
+        ldconfig -p | grep -q "$l " || { echo "missing host library: $l"; ok=0; }
+    done
+    [[ $ok == 1 ]] && echo "doctor: OK" || { echo "doctor: problems found"; exit 1; }
+}
+
+cmd_version() {
+    echo "mstsc-wine $VERSION"
+    echo "WineRevision: $("$WINE" --version) ($RUNTIME)"
+    echo "RuntimePatchSet: $(cat "$PROJECT_DIR/patches/series" 2>/dev/null | grep -vc '^#' || echo 0) patch(es)"
+    echo "MicrosoftClientBuild: $(basename "$(readlink -f "$MSTSC_WINE_COMPONENTS" 2>/dev/null || echo none)")"
+    echo "HostOS: $(. /etc/os-release; echo "$PRETTY_NAME") $(uname -r)"
+    echo "DisplayBackend: $MSTSC_WINE_BACKEND (${XDG_SESSION_TYPE:-?})"
+}
+
+case "${1:-}" in
+    init) shift; cmd_init "$@";;
+    import) shift; cmd_import "$@";;
+    run) shift; cmd_run "$@";;
+    exec) shift; cmd_exec "$@";;
+    doctor) shift; cmd_doctor "$@";;
+    --version|version) cmd_version;;
+    -h|--help|help) sed -n '2,22p' "$0";;
+    *) cmd_run "$@";;
+esac

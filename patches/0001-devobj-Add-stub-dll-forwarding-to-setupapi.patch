@@ -1,0 +1,311 @@
+From ee6e83b773939aba03e381116f58eab4c31f53b9 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Fri, 13 Nov 2026 23:07:05 -0500
+Subject: [PATCH 1/2] devobj: Add stub dll forwarding to setupapi.
+
+Windows 8+ setupapi is built on devobj.dll; Remote Desktop's mstscax.dll
+imports 13 DevObj* functions statically and fails to load without it.
+
+Exports whose stdcall argument counts match a public SetupDi*W function are
+forwarded to it.  DevObjCreateDeviceInfoList and DevObjGetClassDevs differ
+in shape; their mapping is derived from call sites in mstscax.dll.
+---
+ configure                     |  3 ++
+ configure.ac                  |  2 +
+ dlls/devobj/Makefile.in       |  8 ++++
+ dlls/devobj/devobj.spec       | 53 ++++++++++++++++++++++
+ dlls/devobj/main.c            | 70 ++++++++++++++++++++++++++++++
+ dlls/devobj/tests/Makefile.in |  5 +++
+ dlls/devobj/tests/devobj.c    | 82 +++++++++++++++++++++++++++++++++++
+ 7 files changed, 223 insertions(+)
+ create mode 100644 dlls/devobj/Makefile.in
+ create mode 100644 dlls/devobj/devobj.spec
+ create mode 100644 dlls/devobj/main.c
+ create mode 100644 dlls/devobj/tests/Makefile.in
+ create mode 100644 dlls/devobj/tests/devobj.c
+
+diff --git a/configure b/configure
+index df4c4a9..86720b9 100755
+--- a/configure
++++ b/configure
+@@ -1109,6 +1109,7 @@ enable_ddraw
+ enable_ddrawex
+ enable_desk_cpl
+ enable_devenum
++enable_devobj
+ enable_dhcpcsvc
+ enable_dhcpcsvc6
+ enable_dhtmled_ocx
+@@ -22516,6 +22517,8 @@ wine_fn_config_makefile dlls/ddrawex/tests enable_tests
+ wine_fn_config_makefile dlls/desk.cpl enable_desk_cpl
+ wine_fn_config_makefile dlls/devenum enable_devenum
+ wine_fn_config_makefile dlls/devenum/tests enable_tests
++wine_fn_config_makefile dlls/devobj enable_devobj
++wine_fn_config_makefile dlls/devobj/tests enable_tests
+ wine_fn_config_makefile dlls/dhcpcsvc enable_dhcpcsvc
+ wine_fn_config_makefile dlls/dhcpcsvc/tests enable_tests
+ wine_fn_config_makefile dlls/dhcpcsvc6 enable_dhcpcsvc6
+diff --git a/configure.ac b/configure.ac
+index b8ae3db..1605527 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -2658,6 +2658,8 @@ WINE_CONFIG_MAKEFILE(dlls/ddrawex/tests)
+ WINE_CONFIG_MAKEFILE(dlls/desk.cpl)
+ WINE_CONFIG_MAKEFILE(dlls/devenum)
+ WINE_CONFIG_MAKEFILE(dlls/devenum/tests)
++WINE_CONFIG_MAKEFILE(dlls/devobj)
++WINE_CONFIG_MAKEFILE(dlls/devobj/tests)
+ WINE_CONFIG_MAKEFILE(dlls/dhcpcsvc)
+ WINE_CONFIG_MAKEFILE(dlls/dhcpcsvc/tests)
+ WINE_CONFIG_MAKEFILE(dlls/dhcpcsvc6)
+diff --git a/dlls/devobj/Makefile.in b/dlls/devobj/Makefile.in
+new file mode 100644
+index 0000000..0e133ae
+--- /dev/null
++++ b/dlls/devobj/Makefile.in
+@@ -0,0 +1,8 @@
++MODULE    = devobj.dll
++IMPORTLIB = devobj
++IMPORTS   = setupapi
++
++EXTRADLLFLAGS = -Wb,--prefer-native
++
++SOURCES = \
++	main.c
+diff --git a/dlls/devobj/devobj.spec b/dlls/devobj/devobj.spec
+new file mode 100644
+index 0000000..dd99320
+--- /dev/null
++++ b/dlls/devobj/devobj.spec
+@@ -0,0 +1,53 @@
++# Windows 8+ device object library.  The SetupDi* family in setupapi is built on
++# these exports on Windows.  Argument counts come from the x86 stdcall
++# decorations; where they match the public SetupDi* equivalent the export is
++# forwarded directly.
++
++@ stub DevObjBuildClassInfoList
++@ stub DevObjClassGuidsFromName
++@ stub DevObjClassNameFromGuid
++@ stub DevObjCreateDevRegKey
++@ stub DevObjCreateDeviceInfo
++@ stdcall DevObjCreateDeviceInfoList(ptr long wstr ptr ptr)
++@ stub DevObjCreateDeviceInterface
++@ stub DevObjCreateDeviceInterfaceRegKey
++@ stub DevObjDeleteAllInterfacesForDevice
++@ stub DevObjDeleteDevRegKey
++@ stub DevObjDeleteDevice
++@ stub DevObjDeleteDeviceInfo
++@ stub DevObjDeleteDeviceInterfaceData
++@ stub DevObjDeleteDeviceInterfaceRegKey
++@ stdcall DevObjDestroyDeviceInfoList(ptr) setupapi.SetupDiDestroyDeviceInfoList
++@ stdcall DevObjEnumDeviceInfo(ptr long ptr) setupapi.SetupDiEnumDeviceInfo
++@ stdcall DevObjEnumDeviceInterfaces(ptr ptr ptr long ptr) setupapi.SetupDiEnumDeviceInterfaces
++@ stub DevObjGetClassDescription
++@ stdcall DevObjGetClassDevs(ptr ptr wstr long wstr ptr)
++@ stub DevObjGetClassProperty
++@ stub DevObjGetClassPropertyKeys
++@ stub DevObjGetClassRegistryProperty
++@ stub DevObjGetDeviceInfoDetail
++@ stub DevObjGetDeviceInfoListClass
++@ stub DevObjGetDeviceInfoListDetail
++@ stdcall DevObjGetDeviceInstanceId(ptr ptr ptr long ptr) setupapi.SetupDiGetDeviceInstanceIdW
++@ stub DevObjGetDeviceInterfaceAlias
++@ stdcall DevObjGetDeviceInterfaceDetail(ptr ptr ptr long ptr ptr) setupapi.SetupDiGetDeviceInterfaceDetailW
++@ stub DevObjGetDeviceInterfaceProperty
++@ stub DevObjGetDeviceInterfacePropertyKeys
++@ stdcall DevObjGetDeviceProperty(ptr ptr ptr ptr ptr long ptr long) setupapi.SetupDiGetDevicePropertyW
++@ stub DevObjGetDevicePropertyKeys
++@ stdcall DevObjGetDeviceRegistryProperty(ptr ptr long ptr ptr long ptr) setupapi.SetupDiGetDeviceRegistryPropertyW
++@ stub DevObjLocateDevice
++@ stdcall DevObjOpenClassRegKey(ptr long long wstr ptr) setupapi.SetupDiOpenClassRegKeyExW
++@ stdcall DevObjOpenDevRegKey(ptr ptr long long long long) setupapi.SetupDiOpenDevRegKey
++@ stdcall DevObjOpenDeviceInfo(ptr wstr ptr long ptr) setupapi.SetupDiOpenDeviceInfoW
++@ stdcall DevObjOpenDeviceInterface(ptr wstr long ptr) setupapi.SetupDiOpenDeviceInterfaceW
++@ stub DevObjOpenDeviceInterfaceRegKey
++@ stub DevObjRegisterDeviceInfo
++@ stub DevObjRemoveDeviceInterface
++@ stub DevObjSetClassProperty
++@ stub DevObjSetClassRegistryProperty
++@ stub DevObjSetDeviceInfoDetail
++@ stub DevObjSetDeviceInterfaceDefault
++@ stub DevObjSetDeviceInterfaceProperty
++@ stub DevObjSetDeviceProperty
++@ stub DevObjSetDeviceRegistryProperty
+diff --git a/dlls/devobj/main.c b/dlls/devobj/main.c
+new file mode 100644
+index 0000000..8a55d7e
+--- /dev/null
++++ b/dlls/devobj/main.c
+@@ -0,0 +1,70 @@
++/*
++ * Device object library (devobj.dll)
++ *
++ * Copyright 2026 mstsc-wine contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include <stdarg.h>
++
++#include "windef.h"
++#include "winbase.h"
++#include "wingdi.h"
++#include "winuser.h"
++#include "winreg.h"
++#include "setupapi.h"
++
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(devobj);
++
++/***********************************************************************
++ *      DevObjCreateDeviceInfoList (devobj.@)
++ *
++ * The first four parameters correspond to SetupDiCreateDeviceInfoListExW();
++ * the meaning of the fifth is unknown.
++ */
++HDEVINFO WINAPI DevObjCreateDeviceInfoList( const GUID *class, HWND parent, const WCHAR *machine,
++                                            void *reserved, void *unknown )
++{
++    TRACE( "%s %p %s %p %p\n", debugstr_guid(class), parent, debugstr_w(machine), reserved, unknown );
++
++    if (unknown) FIXME( "unknown parameter %p\n", unknown );
++    return SetupDiCreateDeviceInfoListExW( class, parent, machine, reserved );
++}
++
++/***********************************************************************
++ *      DevObjGetClassDevs (devobj.@)
++ *
++ * Adds the matching devices to an existing device information set, like
++ * SetupDiGetClassDevsExW() with a non-NULL DeviceInfoSet, and returns a BOOL.
++ */
++BOOL WINAPI DevObjGetClassDevs( HDEVINFO devinfo, const GUID *class, const WCHAR *enumstr,
++                                DWORD flags, const WCHAR *machine, void *reserved )
++{
++    HDEVINFO ret;
++
++    TRACE( "%p %s %s %#lx %s %p\n", devinfo, debugstr_guid(class), debugstr_w(enumstr), flags,
++           debugstr_w(machine), reserved );
++
++    if (!devinfo || devinfo == INVALID_HANDLE_VALUE)
++    {
++        SetLastError( ERROR_INVALID_HANDLE );
++        return FALSE;
++    }
++    ret = SetupDiGetClassDevsExW( class, enumstr, NULL, flags, devinfo, machine, reserved );
++    return ret != INVALID_HANDLE_VALUE;
++}
+diff --git a/dlls/devobj/tests/Makefile.in b/dlls/devobj/tests/Makefile.in
+new file mode 100644
+index 0000000..dc3fd0b
+--- /dev/null
++++ b/dlls/devobj/tests/Makefile.in
+@@ -0,0 +1,5 @@
++TESTDLL   = devobj.dll
++IMPORTS   = setupapi
++
++SOURCES = \
++	devobj.c
+diff --git a/dlls/devobj/tests/devobj.c b/dlls/devobj/tests/devobj.c
+new file mode 100644
+index 0000000..168f392
+--- /dev/null
++++ b/dlls/devobj/tests/devobj.c
+@@ -0,0 +1,82 @@
++/*
++ * Tests for devobj.dll
++ *
++ * Copyright 2026 mstsc-wine contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#include <stdarg.h>
++
++#include "windef.h"
++#include "winbase.h"
++#include "wingdi.h"
++#include "winuser.h"
++#include "winreg.h"
++#include "setupapi.h"
++#include "initguid.h"
++#include "devguid.h"
++
++#include "wine/test.h"
++
++static HDEVINFO (WINAPI *pDevObjCreateDeviceInfoList)(const GUID *, HWND, const WCHAR *, void *, void *);
++static BOOL (WINAPI *pDevObjGetClassDevs)(HDEVINFO, const GUID *, const WCHAR *, DWORD, const WCHAR *, void *);
++static BOOL (WINAPI *pDevObjDestroyDeviceInfoList)(HDEVINFO);
++static BOOL (WINAPI *pDevObjEnumDeviceInfo)(HDEVINFO, DWORD, SP_DEVINFO_DATA *);
++
++static void test_class_devs(void)
++{
++    SP_DEVINFO_DATA data = {sizeof(data)};
++    HDEVINFO set;
++    BOOL ret;
++
++    set = pDevObjCreateDeviceInfoList(NULL, NULL, NULL, NULL, NULL);
++    ok(set != INVALID_HANDLE_VALUE, "DevObjCreateDeviceInfoList failed, error %lu\n", GetLastError());
++
++    /* Empty list. */
++    SetLastError(0xdeadbeef);
++    ret = pDevObjEnumDeviceInfo(set, 0, &data);
++    ok(!ret && GetLastError() == ERROR_NO_MORE_ITEMS, "got ret %d, error %lu\n", ret, GetLastError());
++
++    /* Adds to the existing set and returns a BOOL, not a new handle. */
++    ret = pDevObjGetClassDevs(set, &GUID_DEVCLASS_DISPLAY, NULL, DIGCF_PRESENT, NULL, NULL);
++    ok(ret == TRUE, "DevObjGetClassDevs returned %d, error %lu\n", ret, GetLastError());
++
++    ret = pDevObjGetClassDevs(set, NULL, NULL, DIGCF_ALLCLASSES, NULL, NULL);
++    ok(ret == TRUE, "DevObjGetClassDevs returned %d, error %lu\n", ret, GetLastError());
++    ret = pDevObjEnumDeviceInfo(set, 0, &data);
++    ok(ret, "expected at least one device, error %lu\n", GetLastError());
++
++    ret = pDevObjDestroyDeviceInfoList(set);
++    ok(ret, "DevObjDestroyDeviceInfoList failed, error %lu\n", GetLastError());
++}
++
++START_TEST(devobj)
++{
++    HMODULE mod = LoadLibraryA("devobj.dll");
++
++    if (!mod)
++    {
++        win_skip("devobj.dll not available\n");
++        return;
++    }
++#define GET(f) p##f = (void *)GetProcAddress(mod, #f); ok(!!p##f, #f " missing\n");
++    GET(DevObjCreateDeviceInfoList);
++    GET(DevObjGetClassDevs);
++    GET(DevObjDestroyDeviceInfoList);
++    GET(DevObjEnumDeviceInfo);
++#undef GET
++    test_class_devs();
++}
+-- 
+2.47.3
+

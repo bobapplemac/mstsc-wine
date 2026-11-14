@@ -1,0 +1,16 @@
+# Proprietary Microsoft binaries: never commit
+*.exe
+*.dll
+*.mui
+*.ocx
+*.drv
+*.sys
+*.cpl
+/components/
+# Local dependencies, builds, prefixes, logs
+/.deps/
+/build/
+/artifacts/
+/wine-src/
+__pycache__/
+/wine-patched/
