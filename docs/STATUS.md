@@ -40,4 +40,5 @@ _Last updated: 2026-11-14_
 2. Set Windows-equivalent FontSubstitutes (MS Shell Dlg → Microsoft Sans Serif,
    MS Shell Dlg 2 → Tahoma) once the genuine fonts are present.
 3. Click Connect against a `.invalid` host to exercise in-process mstscax activation.
-4. Import-gap backlog (R-006): `__C_specific_handler_noexcept`, Cred*, comctl32 #345, DirectUI/DUser.
+4. Packaging: Wine Mono is not needed (R-012); keep `mscoree=d`. Decide on bundling wine-gecko offline only if Help/HTML is in scope.
+5. Import-gap backlog (R-006): `__C_specific_handler_noexcept`, Cred*, comctl32 #345, DirectUI/DUser.

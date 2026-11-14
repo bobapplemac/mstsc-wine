@@ -119,3 +119,16 @@ a loader change like ADR-0005 will be needed once the file is available to test.
 ## R-011 Fonts (V)
 The dialog templates in mstsc.exe.mui use `MS Shell Dlg` 8pt (25 dialogs) and
 `Segoe UI` 9/10pt (6). Neither font is in the prefix or on the host (`fc-match` → Cantarell).
+
+## R-012 Wine Mono / Gecko (V/H)
+On 2026-11-14 a "Wine Mono Installer" prompt appeared during development. The operator
+accepted it: `wine-mono-10.4.1-x86.msi` (WineHQ, open source, not Microsoft) went into
+`~/.cache/wine/`, and Mono went into the regression prefix
+`artifacts/prefixes/regress-install-wine-patched` only (V, by timestamp 08:13). The
+launcher's mstsc prefixes have no Mono (V), because the launcher always sets
+`mscoree=d;mshtml=d`. mstsc.exe and mstscax.dll are native C++ and import no .NET (V,
+import tables), so **Mono is not a runtime dependency**. Packaging decision: keep
+suppressing it and don't bundle it.
+Gecko (`mshtml`) may be needed later if the Help button or another HTML surface
+(`hh.exe`) is in scope (H). If so, bundle the matching `wine-gecko` MSI with the runtime
+and install it offline at `init`. Never prompt the user and never download at runtime.
