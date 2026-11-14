@@ -16,6 +16,9 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-008 | 2026-11-14 | + 0002 fix | `mstsc-wine run` | Aborts: unimplemented `user32.dll.2598` (DPI helper). **Patch 0003** |
 | EXP-009 | 2026-11-14 | + 0003 | `mstsc-wine run` | Page fault in windowscodecs: NULL stream from unresolved `SHLWAPI.628`. **Patch 0004** |
 | EXP-010 | 2026-11-14 | + 0004 | `mstsc-wine run` (Xephyr :5) | **Genuine connection dialog renders**: Computer combo with placeholder text, User, Connect/Help, en-US strings from satellite. Missing banner and "Show Options" chevron (`IMAGE` #690/#675/#676 not found: likely `SystemResources\mstsc.exe.mun`, H). Wrong fonts (Segoe UI, MS Shell Dlg absent) |
+| EXP-011 | 2026-11-14 | + 0005, genuine fonts | `mstsc-wine run` (Xephyr :5) | `.mun` loaded (trace). **Banner image, Segoe UI title, monitor icon and Show Options chevron render**. Genuine fonts are used. "Show Options" label is truncated |
+| EXP-012 | 2026-11-14 | + 0005 | `regsvr32 /s mstscax.dll` | **exit 0**; MsTscAx CLSIDs/ProgIDs registered (REGISTRY from `.mun`) |
+| EXP-013 | 2026-11-14 | + 0005 | `cscript probe-mstscax.js` | `MsTscAx.MsTscAx.2` created, `Version=10.0.20348`. MsTscAx.MsTscAx, .11 and MsRdpClient fail 0x800a01ad |
 
 ## Reproducible tests
 
@@ -24,6 +27,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | Patch regression A/B | `tests/run-regression.sh build/install-wine-11.0 baseline` / `... build/install-wine-patched patched` | patches 0001, 0002 |
 | MUI fixture | `tests/static/mui-fixture/build.sh OUT` then `wine OUT/muitest.exe` | LN exe + satellite, Unicode string, checksum rejection |
 | devobj conformance | `wine build/wine-patched/dlls/devobj/tests/x86_64-windows/devobj_test.exe devobj` | DevObj create/GetClassDevs/enum/destroy |
+| `.mun` fixture | `wine OUT/mun/muntest.exe` (after copying `OUT/mun/SystemResources/*` to `C:\windows\SystemResources`) | patch 0005 |
 | user32 #2598 | `wine artifacts/user32-ordinals/ord2598.exe` | patch 0003 |
 | shcore conformance | `wine build/wine-patched/dlls/shcore/tests/x86_64-windows/shcore_test.exe shcore` | patch 0004 |
 | Launcher isolation | `tests/launch/test-launcher-isolation.sh` | F-013, N-003 |
@@ -31,5 +35,5 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 
 ## Phase 1 acceptance status (T-001…T-021)
 
-T-001 (launch) is **partially met**: the genuine dialog renders. Images (`.mun`) and fonts are still missing.
+T-001 (launch) is **largely met**: the genuine dialog renders with its images and genuine fonts. One label is truncated.
 T-002 onward also need a Windows RDP test endpoint, which hasn't been provided.

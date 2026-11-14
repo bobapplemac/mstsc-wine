@@ -1,0 +1,226 @@
+From c9dbe4ff0fa9fc3ecc2a26a71aaf7d635db8207a Mon Sep 17 00:00:00 2001
+From: "Andrew J. Moore" <andrew@forevermoore.net>
+Date: Sat, 14 Nov 2026 10:06:30 -0500
+Subject: [PATCH 5/5] ntdll: Load main resources from SystemResources .mun
+ files.
+
+Windows 10 1903 and later move the non-localizable resources (icons,
+images, registry scripts, type libraries, ...) of language-neutral system
+modules into %windir%\SystemResources\<file>.mun, a resource-only image
+whose MUI configuration is a copy of the module's own.  When a lookup
+fails in the module and its MUI satellite, map that file, verify that it
+is marked as a language-neutral main file with a matching checksum, and
+search it.
+---
+ dlls/ntdll/resource.c | 95 ++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 75 insertions(+), 20 deletions(-)
+
+diff --git a/dlls/ntdll/resource.c b/dlls/ntdll/resource.c
+index 0f88e79..ece0052 100644
+--- a/dlls/ntdll/resource.c
++++ b/dlls/ntdll/resource.c
+@@ -35,6 +35,7 @@
+ #include "winbase.h"
+ #include "winnt.h"
+ #include "winternl.h"
++#include "ddk/wdm.h"
+ #include "ntdll_misc.h"
+ #include "wine/asm.h"
+ #include "wine/exception.h"
+@@ -258,6 +259,11 @@ done:
+  * and keeps its localizable resources in <dir>\<language>\<file>.mui.
+  * On Windows Vista and later the resource loader transparently searches
+  * that file.  We search it when a lookup in the module itself fails.
++ *
++ * Windows 10 1903 and later also move the non-localizable "main" resources
++ * (icons, images, registry scripts, ...) of system modules into a
++ * resource-only image %windir%\SystemResources\<file>.mun, whose MUI
++ * configuration is a copy of the module's own.  It is searched last.
+  */
+ 
+ #define MUI_SIGNATURE 0xfecdfecd
+@@ -300,6 +306,8 @@ struct mui_module
+     WCHAR             *owner_path;
+     void              *base;      /* image mapping of the .mui file, NULL if none was found */
+     SIZE_T             size;
++    void              *mun_base;  /* image mapping of the .mun file, NULL if none was found */
++    SIZE_T             mun_size;
+ };
+ 
+ static struct mui_module *mui_modules;
+@@ -333,7 +341,7 @@ static const struct mui_config *get_mui_config( HMODULE hmod, ULONG *size )
+     return mui;
+ }
+ 
+-static BOOL mui_matches( void *base, const struct mui_config *main_mui )
++static BOOL mui_matches( void *base, const struct mui_config *main_mui, DWORD file_type )
+ {
+     const struct mui_config *mui;
+     ULONG size;
+@@ -343,7 +351,7 @@ static BOOL mui_matches( void *base, const struct mui_config *main_mui )
+         WARN( "no MUI configuration in satellite\n" );
+         return FALSE;
+     }
+-    if (!(mui->file_type & MUI_FILE_TYPE_LN_MUI))
++    if (!(mui->file_type & file_type))
+     {
+         WARN( "satellite has unexpected file type %#lx\n", mui->file_type );
+         return FALSE;
+@@ -479,7 +487,7 @@ static void *load_mui_module( const WCHAR *module_path, const struct mui_config
+         swprintf( path + dir_len, len - dir_len, L"%s\\%s.mui", lang, file );
+         TRACE( "trying %s\n", debugstr_w(path) );
+         if (!(base = map_mui_file( path, size ))) continue;
+-        if (!mui_matches( base, main_mui ))
++        if (!mui_matches( base, main_mui, MUI_FILE_TYPE_LN_MUI ))
+         {
+             NtUnmapViewOfSection( NtCurrentProcess(), base );
+             base = NULL;
+@@ -490,21 +498,51 @@ static void *load_mui_module( const WCHAR *module_path, const struct mui_config
+     return base;
+ }
+ 
+-/* returns the image-resource handle (base | 2) of the satellite, or NULL */
+-static HMODULE get_mui_module( HMODULE hmod )
++static void *load_mun_module( const WCHAR *module_path, const struct mui_config *main_mui, SIZE_T *size )
++{
++    static const WCHAR subdir[] = L"\\SystemResources\\";
++    const WCHAR *file = wcsrchr( module_path, '\\' );
++    const WCHAR *root = user_shared_data->NtSystemRoot;
++    WCHAR *path;
++    void *base;
++    ULONG len;
++
++    if (!file) return NULL;
++    file++;
++    len = wcslen( root ) + ARRAY_SIZE(subdir) + wcslen( file ) + 4;
++    if (!(path = RtlAllocateHeap( GetProcessHeap(), 0, len * sizeof(WCHAR) ))) return NULL;
++    swprintf( path, len, L"%s%s%s.mun", root, subdir, file );
++    TRACE( "trying %s\n", debugstr_w(path) );
++    if ((base = map_mui_file( path, size )))
++    {
++        /* the .mun carries a copy of the language-neutral module's own configuration */
++        if (!mui_matches( base, main_mui, MUI_FILE_TYPE_LN_MAIN ))
++        {
++            NtUnmapViewOfSection( NtCurrentProcess(), base );
++            base = NULL;
++        }
++        else TRACE( "loaded system resources for %s from %s\n", debugstr_w(module_path), debugstr_w(path) );
++    }
++    RtlFreeHeap( GetProcessHeap(), 0, path );
++    return base;
++}
++
++/* Get the image-resource handles (base | 2) of the satellite and the .mun file;
++ * either may be NULL.  Returns FALSE if the module has neither. */
++static BOOL get_mui_modules( HMODULE hmod, HMODULE *mui, HMODULE *mun )
+ {
+     const struct mui_config *main_mui;
+     struct mui_module *mod, **prev;
+     WCHAR *path;
+-    HMODULE ret = NULL;
+-    SIZE_T size = 0;
+-    void *base;
++    SIZE_T size = 0, mun_size = 0;
++    void *base, *mun_base;
+     ULONG cfg_size;
+ 
+-    if (!hmod || is_data_file_module( hmod ) || ((ULONG_PTR)hmod & 2)) return NULL;
+-    if (!(main_mui = get_mui_config( hmod, &cfg_size ))) return NULL;
+-    if (!(main_mui->file_type & MUI_FILE_TYPE_LN_MAIN)) return NULL;
+-    if (!(path = get_module_path( hmod ))) return NULL;
++    *mui = *mun = NULL;
++    if (!hmod || is_data_file_module( hmod ) || ((ULONG_PTR)hmod & 2)) return FALSE;
++    if (!(main_mui = get_mui_config( hmod, &cfg_size ))) return FALSE;
++    if (!(main_mui->file_type & MUI_FILE_TYPE_LN_MAIN)) return FALSE;
++    if (!(path = get_module_path( hmod ))) return FALSE;
+ 
+     RtlEnterCriticalSection( &mui_section );
+     for (prev = &mui_modules; (mod = *prev); prev = &mod->next)
+@@ -512,14 +550,16 @@ static HMODULE get_mui_module( HMODULE hmod )
+         if (mod->owner != hmod) continue;
+         if (!wcsicmp( mod->owner_path, path ))
+         {
+-            if (mod->base) ret = (HMODULE)((ULONG_PTR)mod->base | 2);
++            if (mod->base) *mui = (HMODULE)((ULONG_PTR)mod->base | 2);
++            if (mod->mun_base) *mun = (HMODULE)((ULONG_PTR)mod->mun_base | 2);
+             RtlLeaveCriticalSection( &mui_section );
+             RtlFreeHeap( GetProcessHeap(), 0, path );
+-            return ret;
++            return *mui || *mun;
+         }
+         /* stale entry: a different module was loaded at the same address */
+         *prev = mod->next;
+         if (mod->base) NtUnmapViewOfSection( NtCurrentProcess(), mod->base );
++        if (mod->mun_base) NtUnmapViewOfSection( NtCurrentProcess(), mod->mun_base );
+         RtlFreeHeap( GetProcessHeap(), 0, mod->owner_path );
+         RtlFreeHeap( GetProcessHeap(), 0, mod );
+         break;
+@@ -527,28 +567,33 @@ static HMODULE get_mui_module( HMODULE hmod )
+     RtlLeaveCriticalSection( &mui_section );
+ 
+     base = load_mui_module( path, main_mui, &size );
++    mun_base = load_mun_module( path, main_mui, &mun_size );
+ 
+     if (!(mod = RtlAllocateHeap( GetProcessHeap(), 0, sizeof(*mod) )))
+     {
+         if (base) NtUnmapViewOfSection( NtCurrentProcess(), base );
++        if (mun_base) NtUnmapViewOfSection( NtCurrentProcess(), mun_base );
+         RtlFreeHeap( GetProcessHeap(), 0, path );
+-        return NULL;
++        return FALSE;
+     }
+     mod->owner = hmod;
+     mod->owner_path = path;
+     mod->base = base;
+     mod->size = size;
++    mod->mun_base = mun_base;
++    mod->mun_size = mun_size;
+ 
+     RtlEnterCriticalSection( &mui_section );
+     mod->next = mui_modules;
+     mui_modules = mod;
+     RtlLeaveCriticalSection( &mui_section );
+ 
+-    if (base) ret = (HMODULE)((ULONG_PTR)base | 2);
+-    return ret;
++    if (base) *mui = (HMODULE)((ULONG_PTR)base | 2);
++    if (mun_base) *mun = (HMODULE)((ULONG_PTR)mun_base | 2);
++    return *mui || *mun;
+ }
+ 
+-/* find the satellite mapping containing a resource data entry, if any */
++/* find the satellite or .mun mapping containing a resource data entry, if any */
+ static HMODULE find_mui_module_for_entry( const void *entry )
+ {
+     struct mui_module *mod;
+@@ -563,6 +608,12 @@ static HMODULE find_mui_module_for_entry( const void *entry )
+             ret = (HMODULE)((ULONG_PTR)mod->base | 2);
+             break;
+         }
++        if (mod->mun_base && (const char *)entry >= (const char *)mod->mun_base &&
++            (const char *)entry < (const char *)mod->mun_base + mod->mun_size)
++        {
++            ret = (HMODULE)((ULONG_PTR)mod->mun_base | 2);
++            break;
++        }
+     }
+     RtlLeaveCriticalSection( &mui_section );
+     return ret;
+@@ -622,8 +673,12 @@ NTSTATUS WINAPI DECLSPEC_HOTPATCH LdrFindResource_U( HMODULE hmod, const LDR_RES
+         status = find_entry( hmod, info, level, &res, FALSE );
+         if (is_resource_not_found( status ) && level)
+         {
+-            HMODULE mui = get_mui_module( hmod );
+-            if (mui) status = find_entry( mui, info, level, &res, FALSE );
++            HMODULE mui, mun;
++            if (get_mui_modules( hmod, &mui, &mun ))
++            {
++                if (mui) status = find_entry( mui, info, level, &res, FALSE );
++                if (mun && is_resource_not_found( status )) status = find_entry( mun, info, level, &res, FALSE );
++            }
+         }
+         if (status == STATUS_SUCCESS) *entry = res;
+     }
+-- 
+2.47.3
+

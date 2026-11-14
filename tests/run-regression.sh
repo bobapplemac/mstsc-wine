@@ -27,6 +27,9 @@ check "smoke: cmd /c echo"                     pass "$W" cmd /c echo ok
 check "mui: string from en-US satellite"       $exp_fix "$W" "$FIX/muitest.exe"
 check "mui: mismatched checksum is rejected"   pass "$W" "$FIX/bad/muitest.exe" expect-missing
 check "mui: i386 resource-only satellite"    $exp_fix "$W" "$FIX/i386/muitest.exe"
+mkdir -p "$WINEPREFIX/drive_c/windows/SystemResources" && cp -f "$FIX"/mun/SystemResources/*.mun "$WINEPREFIX/drive_c/windows/SystemResources/"
+check "mun: IMAGE from SystemResources .mun"  $exp_fix "$W" "$FIX/mun/muntest.exe"
+check "mun: mismatched checksum is rejected"  pass "$W" "$FIX/mun/muntestbad.exe" expect-missing
 check "user32: ordinal 2598 callable"         $exp_fix "$W" "$ORD/ord2598.exe"
 if [[ -f $ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe ]]; then
     check "devobj: conformance test"           pass "$W" "$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe" devobj

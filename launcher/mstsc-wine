@@ -98,6 +98,7 @@ cmd_init() {
         if [[ -L "$u/$d" ]]; then rm -f "$u/$d"; mkdir -p "$u/$d"; fi
     done
     install_components
+    configure_fonts
     "$WINESERVER" -w
     note "prefix ready (log: $LOG)"
 }
@@ -112,6 +113,18 @@ winrel() {
         systemresources) echo "SystemResources/${r#*/}" ;;
         *)               echo "system32/$r" ;;
     esac
+}
+
+# With the genuine fonts present, map the dialog font aliases as Windows does
+# (Wine's defaults point both at Tahoma). Win32u loads C:\windows\Fonts itself.
+configure_fonts() {
+    local fonts="$WINEPREFIX/drive_c/windows/Fonts" key='HKLM\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes'
+    if [[ -f "$fonts/micross.ttf" ]]; then
+        "$WINE" reg add "$key" /v "MS Shell Dlg" /d "Microsoft Sans Serif" /f >>"$LOG" 2>&1 || die "reg add failed (see $LOG)"
+    fi
+    if [[ -f "$fonts/tahoma.ttf" ]]; then
+        "$WINE" reg add "$key" /v "MS Shell Dlg 2" /d "Tahoma" /f >>"$LOG" 2>&1 || die "reg add failed (see $LOG)"
+    fi
 }
 
 install_components() {

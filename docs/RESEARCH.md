@@ -109,12 +109,19 @@ No file contains a `REGISTRY` resource (V). On Windows, servicing manifests regi
 system COM classes, so `DllRegisterServer` probably fails there too (I). mstsc.exe got to
 its connection dialog without any COM registration (V). If ActiveX hosting needs it later,
 write the CLSID/TypeLib keys from the TYPELIB resource rather than patch around this.
+**Resolved (V, 2026-11-14):** REGISTRY #101–103 are in `SystemResources\mstscax.dll.mun`.
+With patch 0005, `regsvr32 /s mstscax.dll` exits 0 and registers the MsTscAx ProgIDs.
+`new ActiveXObject("MsTscAx.MsTscAx.2").Version` returns `10.0.20348`. Other ProgIDs fail
+from script with 0x800a01ad; that's probably not-safe-for-scripting classes (H).
 
-## R-010 Images live outside the PE+MUI pair (H)
+## R-010 Images live outside the PE+MUI pair (V, 2026-11-14)
 mstsc calls `SHCreateStreamOnModuleResourceW(mstsc.exe, #690/#675/#676, L"Image")`, and
 neither mstsc.exe nor mstsc.exe.mui has an `IMAGE` type. Windows 10 1903+ loads such
 resources from `%windir%\SystemResources\<name>.mun`. Wine has no `.mun` redirection, so
 a loader change like ADR-0005 will be needed once the file is available to test.
+**Confirmed:** `mstsc.exe.mun` holds 60 IMAGE resources (including #675/#676/#690), icons,
+REGISTRY and UIFILE resources. Its MUI configuration is a byte copy of the LN module's (same
+checksum, `file_type` 0x11). Patch 0005 loads it (ADR-0008), and the banner and chevron now render.
 
 ## R-011 Fonts (V)
 The dialog templates in mstsc.exe.mui use `MS Shell Dlg` 8pt (25 dialogs) and
@@ -132,3 +139,10 @@ suppressing it and don't bundle it.
 Gecko (`mshtml`) may be needed later if the Help button or another HTML surface
 (`hh.exe`) is in scope (H). If so, bundle the matching `wine-gecko` MSI with the runtime
 and install it offline at `init`. Never prompt the user and never download at runtime.
+
+## R-013 Genuine fonts (V)
+Win32u loads every font in `C:\windows\Fonts`, and the trace shows `segoeui.ttf`, `micross.ttf` and
+`tahoma.ttf` loaded from there. The genuine Tahoma takes precedence over Wine's bundled Tahoma.
+The launcher sets `MS Shell Dlg`→`Microsoft Sans Serif` and `MS Shell Dlg 2`→`Tahoma` as
+Windows does; Wine's default maps both to Tahoma. Open issue: the "Show Options" label is
+truncated to "Show Optio...", probably a text-metrics or DPI difference (H).

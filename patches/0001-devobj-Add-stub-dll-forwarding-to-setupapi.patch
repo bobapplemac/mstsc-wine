@@ -1,7 +1,7 @@
 From ee6e83b773939aba03e381116f58eab4c31f53b9 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Fri, 13 Nov 2026 23:07:05 -0500
-Subject: [PATCH 1/4] devobj: Add stub dll forwarding to setupapi.
+Subject: [PATCH 1/5] devobj: Add stub dll forwarding to setupapi.
 
 Windows 8+ setupapi is built on devobj.dll; Remote Desktop's mstscax.dll
 imports 13 DevObj* functions statically and fails to load without it.
