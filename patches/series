@@ -4,3 +4,6 @@
 0004-shcore-Implement-SHCreateStreamOnModuleResourceW.patch
 0005-ntdll-Load-main-resources-from-SystemResources-.mun-.patch
 0006-sspicli-Implement-SspiPrepareForCredRead.patch
+0007-ws2_32-Implement-NS_NLA-network-enumeration-in-WSALo.patch
+0008-advapi32-Return-ERROR_NOT_FOUND-from-CredReadW-for-a.patch
+0009-msxml3-Implement-IXMLDOMAttribute-put_nodeTypedValue.patch

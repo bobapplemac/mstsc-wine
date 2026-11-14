@@ -21,6 +21,9 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-013 | 2026-11-14 | + 0005 | `cscript probe-mstscax.js` | `MsTscAx.MsTscAx.2` created, `Version=10.0.20348`. MsTscAx.MsTscAx, .11 and MsRdpClient fail 0x800a01ad |
 | EXP-014 | 2026-11-14 | + 0005 | `mstsc-wine run /v:rdp-test.invalid` | Aborts: unimplemented `sspicli.SspiPrepareForCredRead`. **Patch 0006** |
 | EXP-015 | 2026-11-14 | + 0006 | same | Connection attempt runs; mstscax loads d2d1/wined3d/audio/crypt32. Ends in **"An internal error has occurred", error code 0xa08**. Windows would report a name-lookup failure. Trace shows name resolution through `WSALookupServiceBeginW`/`NextW`, which are stubs in Wine (R-015). Expanded "See details" area repaints badly in Xephyr without a WM |
+| EXP-016 | 2026-11-14 | + 0007 (NLA) | `/v:rdp-test.invalid` | NLA enumeration succeeds; still 0xa08. Also observed: `CredReadW` type 6 rejected → **patch 0008**; still 0xa08 |
+| EXP-017 | 2026-11-14 | + 0008 | winedbg breakpoints on the 7 `0xa08` sites; relay trace | Hit mstscax+0x102e43 after an internal call returned E_NOTIMPL. Source: msxml3 attribute `put_nodeTypedValue` stub → **patch 0009** |
+| EXP-018 | 2026-11-14 | + 0009 | `/v:rdp-test.invalid` | `GetAddrInfoW("rdp-test.invalid","3389")`. **Genuine "Remote Desktop can't find the computer" dialog** (expected Windows behaviour) |
 
 ## Reproducible tests
 
@@ -32,6 +35,8 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | `.mun` fixture | `wine OUT/mun/muntest.exe` (after copying `OUT/mun/SystemResources/*` to `C:\windows\SystemResources`) | patch 0005 |
 | secur32 conformance | `wine build/wine-patched/dlls/secur32/tests/x86_64-windows/secur32_test.exe secur32` | patch 0006 |
 | GUI driving | `tools/xclick.py :5 click X Y` / `type TEXT` / `key Return` (XTEST) | manual GUI steps in Xephyr |
+| Connect smoke (GUI) | `DISPLAY=:5 tests/launch/test-connect-invalid.sh` | patches 0006–0009 end to end |
+| ws2_32 / advapi32 / msxml3 conformance | `ws2_32_test.exe protocol`, `advapi32_test.exe cred`, `msxml3_test.exe domdoc` | patches 0007–0009 |
 | user32 #2598 | `wine artifacts/user32-ordinals/ord2598.exe` | patch 0003 |
 | shcore conformance | `wine build/wine-patched/dlls/shcore/tests/x86_64-windows/shcore_test.exe shcore` | patch 0004 |
 | Launcher isolation | `tests/launch/test-launcher-isolation.sh` | F-013, N-003 |

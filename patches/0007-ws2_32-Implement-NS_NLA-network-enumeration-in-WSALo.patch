@@ -1,0 +1,449 @@
+From 562246746b1b812abd70c6f0517e78cbd10984b9 Mon Sep 17 00:00:00 2001
+From: "Andrew J. Moore" <andrew@forevermoore.net>
+Date: Sat, 14 Nov 2026 10:22:32 -0500
+Subject: [PATCH 7/9] ws2_32: Implement NS_NLA network enumeration in
+ WSALookupServiceW.
+
+WSALookupServiceBeginW/NextW/End were stubs.  The Remote Desktop client
+(mstscax.dll) enumerates the NLA namespace (NLA_SERVICE_CLASS_GUID) to
+check network availability.  Report one network per operational,
+non-loopback adapter with NLA_INTERFACE and NLA_CONNECTIVITY blob
+entries, and validate parameters and handles as Windows does.
+---
+ dlls/ws2_32/protocol.c       | 274 ++++++++++++++++++++++++++++++++++-
+ dlls/ws2_32/tests/protocol.c |  68 ++++++++-
+ 2 files changed, 328 insertions(+), 14 deletions(-)
+
+diff --git a/dlls/ws2_32/protocol.c b/dlls/ws2_32/protocol.c
+index c0add6b..6ae2bdd 100644
+--- a/dlls/ws2_32/protocol.c
++++ b/dlls/ws2_32/protocol.c
+@@ -23,6 +23,7 @@
+  */
+ 
+ #include "ws2_32_private.h"
++#include "wine/list.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(winsock);
+ WINE_DECLARE_DEBUG_CHANNEL(winediag);
+@@ -2074,6 +2075,218 @@ int WINAPI WSAGetServiceClassNameByClassIdW( GUID *class, WCHAR *service, DWORD
+ }
+ 
+ 
++
++/***********************************************************************
++ *  Network Location Awareness (NS_NLA) lookups
++ *
++ * Applications such as the Remote Desktop client enumerate the NLA namespace
++ * to find out whether any network is connected.  Report one network per
++ * operational, non-loopback adapter, with NLA_INTERFACE and NLA_CONNECTIVITY
++ * blob entries.
++ */
++
++static const GUID nla_service_class_guid =
++    { 0x0037e515, 0xb5c9, 0x4a43, { 0xba, 0xda, 0x8b, 0x48, 0xa8, 0x7a, 0xd2, 0x39 } };
++
++#define NLA_LOOKUP_MAGIC 0x4e4c4131 /* "NLA1" */
++
++struct nla_network
++{
++    WCHAR  name[MAX_ADAPTER_NAME_LENGTH + 4];
++    char   adapter[MAX_ADAPTER_NAME_LENGTH + 4];
++    DWORD  type;
++    DWORD  speed;
++    NLA_INTERNET internet;
++};
++
++struct nla_lookup
++{
++    struct list entry;
++    DWORD  magic;
++    DWORD  flags;
++    ULONG  count;
++    ULONG  next;
++    struct nla_network networks[1];
++};
++
++static struct list nla_lookups = LIST_INIT( nla_lookups );
++static CRITICAL_SECTION nla_cs;
++static CRITICAL_SECTION_DEBUG nla_cs_debug =
++{
++    0, 0, &nla_cs,
++    { &nla_cs_debug.ProcessLocksList, &nla_cs_debug.ProcessLocksList },
++      0, 0, { (DWORD_PTR)(__FILE__ ": nla_cs") }
++};
++static CRITICAL_SECTION nla_cs = { &nla_cs_debug, -1, 0, 0, 0, 0 };
++
++static BOOL is_nla_query( const WSAQUERYSETW *query )
++{
++    if (query->dwNameSpace == NS_NLA) return TRUE;
++    if (query->dwNameSpace != NS_ALL) return FALSE;
++    /* NS_ALL without a class enumerates networks, as on Windows */
++    return !query->lpServiceClassId || IsEqualGUID( query->lpServiceClassId, &nla_service_class_guid );
++}
++
++static int nla_lookup_create( DWORD flags, struct nla_lookup **ret )
++{
++    IP_ADAPTER_ADDRESSES *addrs = NULL, *a;
++    struct nla_lookup *nla;
++    ULONG size = 0, count = 0, err;
++
++    err = GetAdaptersAddresses( AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
++                                GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS, NULL, NULL, &size );
++    if (err == ERROR_BUFFER_OVERFLOW)
++    {
++        if (!(addrs = malloc( size ))) return WSA_NOT_ENOUGH_MEMORY;
++        err = GetAdaptersAddresses( AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
++                                    GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS, NULL, addrs, &size );
++    }
++    if (err && err != ERROR_NO_DATA) WARN( "GetAdaptersAddresses failed: %lu\n", err );
++    if (err) a = NULL; else a = addrs;
++    for (; a; a = a->Next)
++        if (a->OperStatus == IfOperStatusUp && a->IfType != IF_TYPE_SOFTWARE_LOOPBACK) count++;
++
++    if (!(nla = calloc( 1, offsetof( struct nla_lookup, networks[count ? count : 1] ) )))
++    {
++        free( addrs );
++        return WSA_NOT_ENOUGH_MEMORY;
++    }
++    nla->magic = NLA_LOOKUP_MAGIC;
++    nla->flags = flags;
++    for (a = err ? NULL : addrs; a; a = a->Next)
++    {
++        struct nla_network *net = &nla->networks[nla->count];
++
++        if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
++        lstrcpynW( net->name, a->DnsSuffix && a->DnsSuffix[0] ? a->DnsSuffix : a->FriendlyName,
++                   ARRAY_SIZE(net->name) );
++        lstrcpynA( net->adapter, a->AdapterName, sizeof(net->adapter) );
++        net->type = a->IfType;
++        net->speed = a->TransmitLinkSpeed / 1000 > MAXDWORD ? MAXDWORD : a->TransmitLinkSpeed / 1000;
++        net->internet = a->FirstGatewayAddress ? NLA_INTERNET_YES : NLA_INTERNET_UNKNOWN;
++        TRACE( "network %s adapter %s type %lu internet %u\n", debugstr_w(net->name),
++               debugstr_a(net->adapter), net->type, net->internet );
++        nla->count++;
++    }
++    free( addrs );
++
++    EnterCriticalSection( &nla_cs );
++    list_add_tail( &nla_lookups, &nla->entry );
++    LeaveCriticalSection( &nla_cs );
++    *ret = nla;
++    return 0;
++}
++
++/* must be called with nla_cs held */
++static struct nla_lookup *nla_lookup_find( HANDLE handle )
++{
++    struct nla_lookup *nla;
++
++    LIST_FOR_EACH_ENTRY( nla, &nla_lookups, struct nla_lookup, entry )
++        if (nla == handle && nla->magic == NLA_LOOKUP_MAGIC) return nla;
++    return NULL;
++}
++
++static struct nla_lookup *nla_lookup_remove( HANDLE handle )
++{
++    struct nla_lookup *nla;
++
++    EnterCriticalSection( &nla_cs );
++    if ((nla = nla_lookup_find( handle )))
++    {
++        list_remove( &nla->entry );
++        nla->magic = 0;
++    }
++    LeaveCriticalSection( &nla_cs );
++    return nla;
++}
++
++static inline DWORD nla_align( DWORD size )
++{
++    return (size + 7) & ~7;
++}
++
++static int nla_lookup_next( HANDLE handle, DWORD flags, DWORD *len, WSAQUERYSETW *results )
++{
++    DWORD name_size, iface_size, conn_size, blob_size, needed;
++    const struct nla_network *net;
++    struct nla_lookup *nla;
++    NLA_BLOB *blob;
++    char *ptr;
++    int err = 0;
++
++    if (!len) return WSAEFAULT;
++
++    EnterCriticalSection( &nla_cs );
++    if (!(nla = nla_lookup_find( handle )))
++    {
++        LeaveCriticalSection( &nla_cs );
++        return WSA_INVALID_HANDLE;
++    }
++    if (nla->next >= nla->count)
++    {
++        LeaveCriticalSection( &nla_cs );
++        return WSA_E_NO_MORE;
++    }
++    net = &nla->networks[nla->next];
++    flags |= nla->flags;
++
++    name_size = (flags & LUP_RETURN_NAME) ? (wcslen( net->name ) + 1) * sizeof(WCHAR) : 0;
++    iface_size = nla_align( offsetof( NLA_BLOB, data.interfaceData.adapterName ) + strlen( net->adapter ) + 1 );
++    conn_size = nla_align( offsetof( NLA_BLOB, data.connectivity ) + sizeof(blob->data.connectivity) );
++    blob_size = (flags & LUP_RETURN_BLOB) ? iface_size + conn_size : 0;
++    needed = nla_align( sizeof(*results) ) + nla_align( sizeof(GUID) ) + nla_align( name_size );
++    if (blob_size) needed += nla_align( sizeof(BLOB) ) + blob_size;
++
++    if (!results || *len < needed)
++    {
++        *len = needed;
++        LeaveCriticalSection( &nla_cs );
++        return WSAEFAULT;
++    }
++
++    memset( results, 0, needed );
++    results->dwSize = sizeof(*results);
++    results->dwNameSpace = NS_NLA;
++    ptr = (char *)results + nla_align( sizeof(*results) );
++
++    results->lpServiceClassId = (GUID *)ptr;
++    *results->lpServiceClassId = nla_service_class_guid;
++    ptr += nla_align( sizeof(GUID) );
++
++    if (name_size)
++    {
++        results->lpszServiceInstanceName = (WCHAR *)ptr;
++        memcpy( ptr, net->name, name_size );
++        ptr += nla_align( name_size );
++    }
++    if (blob_size)
++    {
++        results->lpBlob = (BLOB *)ptr;
++        ptr += nla_align( sizeof(BLOB) );
++        results->lpBlob->cbSize = blob_size;
++        results->lpBlob->pBlobData = (BYTE *)ptr;
++
++        blob = (NLA_BLOB *)ptr;
++        blob->header.type = NLA_INTERFACE;
++        blob->header.dwSize = iface_size;
++        blob->header.nextOffset = iface_size;
++        blob->data.interfaceData.dwType = net->type;
++        blob->data.interfaceData.dwSpeed = net->speed;
++        strcpy( blob->data.interfaceData.adapterName, net->adapter );
++
++        blob = (NLA_BLOB *)(ptr + iface_size);
++        blob->header.type = NLA_CONNECTIVITY;
++        blob->header.dwSize = conn_size;
++        blob->header.nextOffset = 0;
++        blob->data.connectivity.type = NLA_NETWORK_UNMANAGED;
++        blob->data.connectivity.internet = net->internet;
++    }
++    nla->next++;
++    LeaveCriticalSection( &nla_cs );
++    return err;
++}
++
+ /***********************************************************************
+  *      WSALookupServiceBeginA   (ws2_32.@)
+  */
+@@ -2090,9 +2303,40 @@ int WINAPI WSALookupServiceBeginA( WSAQUERYSETA *query, DWORD flags, HANDLE *loo
+  */
+ int WINAPI WSALookupServiceBeginW( WSAQUERYSETW *query, DWORD flags, HANDLE *lookup )
+ {
+-    FIXME( "(%p %#lx %p) Stub!\n", query, flags, lookup );
+-    SetLastError( WSA_NOT_ENOUGH_MEMORY );
+-    return -1;
++    struct nla_lookup *nla;
++    int err;
++
++    TRACE( "(%p %#lx %p)\n", query, flags, lookup );
++
++    if (!query || !lookup)
++    {
++        SetLastError( WSAEFAULT );
++        return -1;
++    }
++    if (query->dwSize < sizeof(*query))
++    {
++        SetLastError( WSAEINVAL );
++        return -1;
++    }
++    TRACE( "namespace %lu class %s name %s provider %s\n", query->dwNameSpace,
++           debugstr_guid(query->lpServiceClassId), debugstr_w(query->lpszServiceInstanceName),
++           debugstr_guid(query->lpNSProviderId) );
++
++    if (!is_nla_query( query ))
++    {
++        FIXME( "namespace %lu class %s not supported\n", query->dwNameSpace,
++               debugstr_guid(query->lpServiceClassId) );
++        SetLastError( WSASERVICE_NOT_FOUND );
++        return -1;
++    }
++
++    if ((err = nla_lookup_create( flags, &nla )))
++    {
++        SetLastError( err );
++        return -1;
++    }
++    *lookup = nla;
++    return 0;
+ }
+ 
+ 
+@@ -2101,7 +2345,16 @@ int WINAPI WSALookupServiceBeginW( WSAQUERYSETW *query, DWORD flags, HANDLE *loo
+  */
+ int WINAPI WSALookupServiceEnd( HANDLE lookup )
+ {
+-    FIXME("(%p) Stub!\n", lookup );
++    struct nla_lookup *nla;
++
++    TRACE( "(%p)\n", lookup );
++
++    if (!(nla = nla_lookup_remove( lookup )))
++    {
++        SetLastError( WSA_INVALID_HANDLE );
++        return -1;
++    }
++    free( nla );
+     return 0;
+ }
+ 
+@@ -2122,9 +2375,16 @@ int WINAPI WSALookupServiceNextA( HANDLE lookup, DWORD flags, DWORD *len, WSAQUE
+  */
+ int WINAPI WSALookupServiceNextW( HANDLE lookup, DWORD flags, DWORD *len, WSAQUERYSETW *results )
+ {
+-    FIXME( "(%p %#lx %p %p) Stub!\n", lookup, flags, len, results );
+-    SetLastError( WSA_E_NO_MORE );
+-    return -1;
++    int err;
++
++    TRACE( "(%p %#lx %p %p)\n", lookup, flags, len, results );
++
++    if ((err = nla_lookup_next( lookup, flags, len, results )))
++    {
++        SetLastError( err );
++        return -1;
++    }
++    return 0;
+ }
+ 
+ 
+diff --git a/dlls/ws2_32/tests/protocol.c b/dlls/ws2_32/tests/protocol.c
+index 5da1bd3..9b9931b 100644
+--- a/dlls/ws2_32/tests/protocol.c
++++ b/dlls/ws2_32/tests/protocol.c
+@@ -400,27 +400,23 @@ static void test_WSALookupService(void)
+     ret = WSALookupServiceBeginW(NULL, 0, &handle);
+     error = WSAGetLastError();
+     ok(ret == SOCKET_ERROR, "WSALookupServiceBeginW should have failed\n");
+-    todo_wine
+     ok(error == WSAEFAULT, "expected 10014, got %ld\n", error);
+ 
+     ret = WSALookupServiceBeginW(qs, 0, NULL);
+     error = WSAGetLastError();
+     ok(ret == SOCKET_ERROR, "WSALookupServiceBeginW should have failed\n");
+-    todo_wine
+     ok(error == WSAEFAULT, "expected 10014, got %ld\n", error);
+ 
+     ret = WSALookupServiceBeginW(qs, 0, &handle);
+     ok(ret == SOCKET_ERROR, "WSALookupServiceBeginW should have failed\n");
+-    todo_wine ok(WSAGetLastError() == WSAEINVAL
++    ok(WSAGetLastError() == WSAEINVAL
+             || broken(WSAGetLastError() == ERROR_INVALID_PARAMETER)
+             || broken(WSAGetLastError() == WSASERVICE_NOT_FOUND) /* win10 1809 */,
+             "got error %u\n", WSAGetLastError());
+ 
+     ret = WSALookupServiceEnd(NULL);
+     error = WSAGetLastError();
+-    todo_wine
+     ok(ret == SOCKET_ERROR, "WSALookupServiceEnd should have failed\n");
+-    todo_wine
+     ok(error == ERROR_INVALID_HANDLE, "expected 6, got %ld\n", error);
+ 
+     /* standard network list query */
+@@ -434,9 +430,7 @@ static void test_WSALookupService(void)
+         return;
+     }
+ 
+-    todo_wine
+     ok(!ret, "WSALookupServiceBeginW failed unexpectedly with error %ld\n", error);
+-    todo_wine
+     ok(handle != (HANDLE)0xdeadbeef, "Handle was not filled\n");
+ 
+     offset = 0;
+@@ -536,6 +530,65 @@ static void test_WSALookupService(void)
+     ok(!ret, "WSALookupServiceEnd failed unexpectedly\n");
+ }
+ 
++static void test_WSALookupService_NLA(void)
++{
++    static const GUID nla_class = { 0x0037e515, 0xb5c9, 0x4a43, { 0xba, 0xda, 0x8b, 0x48, 0xa8, 0x7a, 0xd2, 0x39 } };
++    char buffer[4096];
++    WSAQUERYSETW query, *qs = (WSAQUERYSETW *)buffer;
++    GUID class = nla_class;
++    HANDLE handle = NULL;
++    DWORD size, offset;
++    NLA_BLOB *nla;
++    int ret, count = 0, connectivity;
++
++    memset(&query, 0, sizeof(query));
++    query.dwSize = sizeof(query);
++    query.dwNameSpace = NS_NLA;
++    query.lpServiceClassId = &class;
++    ret = WSALookupServiceBeginW(&query, LUP_RETURN_ALL, &handle);
++    ok(!ret, "WSALookupServiceBeginW failed, error %u\n", WSAGetLastError());
++    if (ret) return;
++    ok(handle != NULL, "got NULL handle\n");
++
++    for (;;)
++    {
++        size = sizeof(*qs) - 1;
++        ret = WSALookupServiceNextW(handle, 0, &size, qs);
++        if (ret == SOCKET_ERROR && WSAGetLastError() == WSA_E_NO_MORE) break;
++        ok(ret == SOCKET_ERROR && WSAGetLastError() == WSAEFAULT, "got %d error %u\n", ret, WSAGetLastError());
++        ok(size > sizeof(*qs), "got required size %lu\n", size);
++        if (size > sizeof(buffer)) break;
++
++        ret = WSALookupServiceNextW(handle, 0, &size, qs);
++        ok(!ret, "WSALookupServiceNextW failed, error %u\n", WSAGetLastError());
++        if (ret) break;
++        count++;
++        ok(qs->dwNameSpace == NS_NLA, "got namespace %lu\n", qs->dwNameSpace);
++        ok(qs->lpServiceClassId && IsEqualGUID(qs->lpServiceClassId, &nla_class), "got class %s\n",
++           qs->lpServiceClassId ? wine_dbgstr_guid(qs->lpServiceClassId) : "(null)");
++        ok(qs->lpszServiceInstanceName != NULL, "got NULL network name\n");
++        ok(qs->lpBlob != NULL, "got NULL blob\n");
++        if (!qs->lpBlob) continue;
++
++        offset = 0;
++        connectivity = 0;
++        do
++        {
++            ok(offset + sizeof(nla->header) <= qs->lpBlob->cbSize, "offset %lu out of range\n", offset);
++            nla = (NLA_BLOB *)(qs->lpBlob->pBlobData + offset);
++            if (nla->header.type == NLA_CONNECTIVITY) connectivity++;
++            offset += nla->header.nextOffset;
++        } while (nla->header.nextOffset);
++        ok(connectivity <= 1, "got %d connectivity entries\n", connectivity);
++    }
++    trace("%d network(s)\n", count);
++
++    ret = WSALookupServiceEnd(handle);
++    ok(!ret, "WSALookupServiceEnd failed, error %u\n", WSAGetLastError());
++    ret = WSALookupServiceEnd(handle);
++    ok(ret == SOCKET_ERROR && WSAGetLastError() == WSA_INVALID_HANDLE, "got %d error %u\n", ret, WSAGetLastError());
++}
++
+ #define WM_ASYNCCOMPLETE (WM_USER + 100)
+ static HWND create_async_message_window(void)
+ {
+@@ -3189,6 +3242,7 @@ START_TEST( protocol )
+ 
+     test_getservbyname();
+     test_WSALookupService();
++    test_WSALookupService_NLA();
+ 
+     test_inet_ntoa();
+     test_inet_addr();
+-- 
+2.47.3
+

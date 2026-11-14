@@ -58,7 +58,7 @@ setup_env() {
     # Disable Mono/Gecko install prompts and host desktop integration by winemenubuilder.
     local ov="winemenubuilder.exe=d;mscoree=d;mshtml=d"
     export WINEDLLOVERRIDES="$ov${MSTSC_WINE_DLLOVERRIDES:+;$MSTSC_WINE_DLLOVERRIDES}"
-    export WINEDEBUG="${MSTSC_WINE_TRACE:+$MSTSC_WINE_TRACE,}err+all,fixme-all"
+    export WINEDEBUG="err+all,fixme-all${MSTSC_WINE_TRACE:+,$MSTSC_WINE_TRACE}"   # opt-in channels last so they win
     case "$MSTSC_WINE_BACKEND" in
         auto|x11) ;;               # winex11 on X11 or XWayland (default driver order)
         wayland) note "wayland backend is experimental";;

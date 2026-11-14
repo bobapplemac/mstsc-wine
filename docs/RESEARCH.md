@@ -156,7 +156,7 @@ Verify it once an endpoint exists. Don't add a plaintext JSON store; credentials
 not live in plain files. If stronger protection is needed, back the advapi32 credential
 functions with libsecret (GNOME Keyring/KWallet) as a later, separately ADR'd change.
 
-## R-015 Connect fails with 0xa08 (I)
+## R-015 Connect fails with 0xa08 (superseded, see below)
 `mstsc /v:rdp-test.invalid` gets as far as a connection attempt. It then shows "An internal
 error has occurred" (0xa08 / ext 0x0). Just before that, the trace shows
 `WSALookupServiceBeginW(…, 0xff0, …)` and `WSALookupServiceNextW`, which are stubs in Wine
@@ -165,3 +165,11 @@ the stub, it gets an unexpected failure instead of "host not found" (I). Next st
 implement `WSALookupServiceBegin/Next/End` for host-name queries (SVCID_INET_HOSTADDRBYNAME
 and similar) on top of getaddrinfo, with a ws2_32 conformance test. Confirm first with a
 call-site trace that the class GUID is the host-address one.
+
+**Resolution (V, 2026-11-14):** the R-015 hypothesis was wrong. The `WSALookupService` query
+is an NS_NLA network-availability check, not name resolution (patch 0007, ADR-0010). The
+real cause was `IXMLDOMAttribute::put_nodeTypedValue` returning E_NOTIMPL, found with
+breakpoints on mstscax's 0xa08 sites (ADR-0012). With patches 0007–0009, Connect resolves
+the target and shows the genuine "can't find the computer" error for `.invalid` hosts.
+mstscax's WPP tracing (the `testb $0x1,0x1c(%rax)` checks) is inert because Wine's ETW is
+stubbed. Enabling it would make future diagnosis much easier (idea, not planned).

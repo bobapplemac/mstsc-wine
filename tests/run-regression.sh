@@ -40,5 +40,11 @@ ST=$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/shcore/tests/x86_64-
 [[ $mode == patched && -f $ST ]] && check "shcore: conformance (resource stream)" pass "$W" "$ST" shcore
 SC=$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/secur32/tests/x86_64-windows/secur32_test.exe
 [[ $mode == patched && -f $SC ]] && check "secur32: conformance (SspiPrepareForCredRead)" pass "$W" "$SC" secur32
+B=$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls
+if [[ $mode == patched ]]; then
+    [[ -f $B/ws2_32/tests/x86_64-windows/ws2_32_test.exe ]] && check "ws2_32: conformance (NS_NLA lookup)" pass "$W" "$B/ws2_32/tests/x86_64-windows/ws2_32_test.exe" protocol
+    [[ -f $B/advapi32/tests/x86_64-windows/advapi32_test.exe ]] && check "advapi32: conformance (CredReadW types)" pass "$W" "$B/advapi32/tests/x86_64-windows/advapi32_test.exe" cred
+    [[ -f $B/msxml3/tests/x86_64-windows/msxml3_test.exe ]] && check "msxml3: conformance (attribute typed value)" pass "$W" "$B/msxml3/tests/x86_64-windows/msxml3_test.exe" domdoc
+fi
 "$RT/bin/wineserver" -k 2>/dev/null
 echo "$fails unexpected result(s)"; exit $((fails > 0))

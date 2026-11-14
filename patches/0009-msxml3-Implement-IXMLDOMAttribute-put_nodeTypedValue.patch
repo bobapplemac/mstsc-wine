@@ -1,0 +1,92 @@
+From 4ee2de256df3aa953bb7df88417dac9f0c6e7fd5 Mon Sep 17 00:00:00 2001
+From: "Andrew J. Moore" <andrew@forevermoore.net>
+Date: Sat, 14 Nov 2026 10:22:32 -0500
+Subject: [PATCH 9/9] msxml3: Implement IXMLDOMAttribute::put_nodeTypedValue
+ for untyped attributes.
+
+Convert the value to a string and store it, as put_value does.  The
+Remote Desktop client sets a VT_UINT attribute this way while preparing
+a connection and aborted with an internal error (0xa08) on E_NOTIMPL.
+---
+ dlls/msxml3/attribute.c    |  8 ++++++--
+ dlls/msxml3/tests/domdoc.c | 38 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/msxml3/attribute.c b/dlls/msxml3/attribute.c
+index a183a50..80a66e4 100644
+--- a/dlls/msxml3/attribute.c
++++ b/dlls/msxml3/attribute.c
+@@ -463,8 +463,12 @@ static HRESULT WINAPI domattr_put_nodeTypedValue(
+     VARIANT typedValue)
+ {
+     domattr *This = impl_from_IXMLDOMAttribute( iface );
+-    FIXME("(%p)->(%s)\n", This, debugstr_variant(&typedValue));
+-    return E_NOTIMPL;
++
++    TRACE("(%p)->(%s)\n", This, debugstr_variant(&typedValue));
++
++    /* Untyped attributes store the value converted to a string, as elements do.
++     * FIXME: attributes typed through the dt: namespace are not encoded. */
++    return node_put_value_escaped(&This->node, &typedValue);
+ }
+ 
+ static HRESULT WINAPI domattr_get_dataType(
+diff --git a/dlls/msxml3/tests/domdoc.c b/dlls/msxml3/tests/domdoc.c
+index a08506f..7953e90 100644
+--- a/dlls/msxml3/tests/domdoc.c
++++ b/dlls/msxml3/tests/domdoc.c
+@@ -7119,6 +7119,43 @@ static const char *strip_spaces(const char *str)
+     return buf;
+ }
+ 
++static void test_attribute_put_nodeTypedValue(void)
++{
++    IXMLDOMDocument *doc;
++    IXMLDOMAttribute *attr;
++    VARIANT value;
++    HRESULT hr;
++
++    doc = create_document(&IID_IXMLDOMDocument);
++    hr = IXMLDOMDocument_createAttribute(doc, _bstr_("attr"), &attr);
++    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
++
++    V_VT(&value) = VT_UINT;
++    V_UINT(&value) = 1;
++    hr = IXMLDOMAttribute_put_nodeTypedValue(attr, value);
++    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
++
++    VariantInit(&value);
++    hr = IXMLDOMAttribute_get_value(attr, &value);
++    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
++    ok(V_VT(&value) == VT_BSTR && !lstrcmpW(V_BSTR(&value), L"1"), "got %s\n", wine_dbgstr_variant(&value));
++    VariantClear(&value);
++
++    V_VT(&value) = VT_BSTR;
++    V_BSTR(&value) = _bstr_("a<b");
++    hr = IXMLDOMAttribute_put_nodeTypedValue(attr, value);
++    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
++    VariantInit(&value);
++    hr = IXMLDOMAttribute_get_value(attr, &value);
++    ok(hr == S_OK, "Unexpected hr %#lx.\n", hr);
++    ok(V_VT(&value) == VT_BSTR && !lstrcmpW(V_BSTR(&value), L"a<b"), "got %s\n", wine_dbgstr_variant(&value));
++    VariantClear(&value);
++
++    IXMLDOMAttribute_Release(attr);
++    IXMLDOMDocument_Release(doc);
++    free_bstrs();
++}
++
+ static void test_nodeTypedValue(void)
+ {
+     const nodetypedvalue_t *entry = get_nodetypedvalue;
+@@ -14413,6 +14450,7 @@ START_TEST(domdoc)
+     test_namespaces_change();
+     test_FormattingXML();
+     test_nodeTypedValue();
++    test_attribute_put_nodeTypedValue();
+     test_TransformWithLoadingLocalFile();
+     test_put_nodeValue();
+     test_IObjectSafety();
+-- 
+2.47.3
+
