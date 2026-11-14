@@ -15,6 +15,7 @@
 __pycache__/
 /wine-patched/
 /system32/
+/Windows/
 *.mun
 *.ttf
 *.ttc

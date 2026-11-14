@@ -102,6 +102,18 @@ cmd_init() {
     note "prefix ready (log: $LOG)"
 }
 
+# Map a component-store path to a path under C:\windows, case-normalising the
+# top-level folder (system32, Fonts, SystemResources).
+winrel() {
+    local r=$1 top=${1%%/*}
+    case "${top,,}" in
+        system32)        echo "system32/${r#*/}" ;;
+        fonts)           echo "Fonts/${r#*/}" ;;
+        systemresources) echo "SystemResources/${r#*/}" ;;
+        *)               echo "system32/$r" ;;
+    esac
+}
+
 install_components() {
     local c="$MSTSC_WINE_COMPONENTS"
     if [[ ! -f "$c/manifest.sha256" ]]; then
@@ -111,18 +123,18 @@ install_components() {
     (cd "$c" && sha256sum --quiet -c manifest.sha256) || die "component manifest mismatch in $c (fail closed)"
     # Files the runtime provides itself are kept in the store for A/B diagnostics
     # but not installed (ADR-0004). Override with MSTSC_WINE_INSTALL_ALL=1.
-    local skip=" devobj.dll " f rel n=0
+    # Store paths are relative to C:\windows (system32/..., Fonts/..., SystemResources/...).
+    # Older flat stores (mstsc.exe, en-US/...) are treated as system32/.
+    local skip=" system32/devobj.dll " f rel win n=0
     while read -r _ rel; do
-        f="$c/$rel"
-        if [[ -z "${MSTSC_WINE_INSTALL_ALL:-}" && "$skip" == *" ${rel,,} "* ]]; then
-            local builtin="$RUNTIME/lib/wine/x86_64-windows/${rel,,}"
-            if [[ -f "$builtin" ]]; then cp -f "$builtin" "$(sys32)/$rel"; else rm -f "$(sys32)/$rel"; fi
+        f="$c/$rel"; win=$(winrel "$rel")
+        if [[ -z "${MSTSC_WINE_INSTALL_ALL:-}" && "$skip" == *" ${win,,} "* ]]; then
+            local base; base=$(basename "${win,,}")
+            local builtin="$RUNTIME/lib/wine/x86_64-windows/$base"
+            if [[ -f "$builtin" ]]; then cp -f "$builtin" "$(sys32)/$base"; else rm -f "$(sys32)/$base"; fi
             continue
         fi
-        local dest="$(sys32)/$rel"
-        case "${rel,,}" in   # Fonts/ and SystemResources/ belong under C:\windows
-            fonts/*|systemresources/*) dest="$WINEPREFIX/drive_c/windows/$rel" ;;
-        esac
+        local dest="$WINEPREFIX/drive_c/windows/$win"
         mkdir -p "$(dirname "$dest")"
         cp -f "$f" "$dest"; n=$((n+1))
     done < "$c/manifest.sha256"
@@ -132,13 +144,19 @@ install_components() {
 cmd_import() {
     local src=${1:-}; [[ -d "$src" ]] || die "usage: mstsc-wine import DIR"
     local tmp; tmp=$(mktemp -d "$MSTSC_WINE_HOME/.import.XXXX" 2>/dev/null || { mkdir -p "$MSTSC_WINE_HOME"; mktemp -d "$MSTSC_WINE_HOME/.import.XXXX"; })
+    # DIR is either a copy of C:\Windows (contains system32/, optionally Fonts/ and
+    # SystemResources/) or a flat copy of system32 files (legacy). Both are stored
+    # in the C:\windows layout.
     (cd "$src" && find . -type f \( -iname '*.exe' -o -iname '*.dll' -o -iname '*.mui' -o -iname '*.ocx' -o -iname '*.mun' -o -iname '*.ttf' -o -iname '*.ttc' \) -printf '%P\n') |
-        while read -r rel; do mkdir -p "$tmp/$(dirname "$rel")"; cp -p "$src/$rel" "$tmp/$rel"; done
+        while read -r rel; do
+            local win; win=$(winrel "$rel")
+            mkdir -p "$tmp/$(dirname "$win")"; cp -p "$src/$rel" "$tmp/$win"
+        done
     (cd "$tmp" && find . -type f ! -name manifest.sha256 -printf '%P\n' | sort | xargs -r -d '\n' sha256sum > manifest.sha256)
     [[ -s "$tmp/manifest.sha256" ]] || { rm -rf "$tmp"; die "no Microsoft files found in $src"; }
     local ver="unknown"
-    if [[ -f "$tmp/mstsc.exe" ]]; then
-        ver=$(PYTHONPATH="$PROJECT_DIR/.deps/py${PYTHONPATH:+:$PYTHONPATH}" python3 "$PROJECT_DIR/tools/inspect-pe.py" --json "$tmp/mstsc.exe" 2>/dev/null |
+    if [[ -f "$tmp/system32/mstsc.exe" ]]; then
+        ver=$(PYTHONPATH="$PROJECT_DIR/.deps/py${PYTHONPATH:+:$PYTHONPATH}" python3 "$PROJECT_DIR/tools/inspect-pe.py" --json "$tmp/system32/mstsc.exe" 2>/dev/null |
               python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["version"].get("FileVersionBinary","unknown"))' 2>/dev/null || echo unknown)
     fi
     local dest="$MSTSC_WINE_HOME/components/$ver"
@@ -194,7 +212,7 @@ cmd_doctor() {
             echo "components: $(readlink -f "$MSTSC_WINE_COMPONENTS") (hashes OK)"
         else echo "components: HASH MISMATCH"; ok=0; fi
         for need in mstsc.exe mstscax.dll en-US/mstsc.exe.mui en-US/mstscax.dll.mui; do
-            [[ -f "$MSTSC_WINE_COMPONENTS/$need" ]] || { echo "  missing: $need"; ok=0; }
+            [[ -f "$MSTSC_WINE_COMPONENTS/system32/$need" || -f "$MSTSC_WINE_COMPONENTS/$need" ]] || { echo "  missing: $need"; ok=0; }
         done
     else echo "components: none imported"; ok=0; fi
     for l in libgnutls.so.30 libgssapi_krb5.so.2 libpulse.so.0 libX11.so.6 libfreetype.so.6 libfontconfig.so.1; do

@@ -26,17 +26,12 @@ _Last updated: 2026-11-14_
 - Tests: regression A/B suite, launcher isolation test (all green).
 
 ## Blockers (need human input)
-1. **Images:** `C:\Windows\SystemResources\mstsc.exe.mun` and `mstscax.dll.mun` (if present).
-   A Wine `.mun` loader change will follow (R-010).
-2. **Fonts** from `C:\Windows\Fonts`: segoeui.ttf, segoeuib.ttf, segoeuii.ttf, segoeuiz.ttf,
-   seguisb.ttf, segoeuil.ttf, seguisym.ttf, segmdl2.ttf, tahoma.ttf, tahomabd.ttf, micross.ttf (R-011).
-3. **RDP test endpoint** for M3+: a disposable Windows host and a test account. Never production.
-4. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
+1. **RDP test endpoint** for M3+: a disposable Windows host and a test account. Never production.
+2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-1. Import the `.mun` and font files (the launcher maps `Fonts/` and `SystemResources/`
-   subfolders of the import folder into `C:\windows`). Implement `.mun` resource
-   redirection with a fixture, following the ADR-0005 pattern.
+1. Fonts and `.mun` files are supplied (repo-root `Windows/` mirrors `C:\Windows`) and installed.
+   Implement `.mun` resource redirection with a fixture, following the ADR-0005 pattern.
 2. Set Windows-equivalent FontSubstitutes (MS Shell Dlg → Microsoft Sans Serif,
    MS Shell Dlg 2 → Tahoma) once the genuine fonts are present.
 3. Click Connect against a `.invalid` host to exercise in-process mstscax activation.

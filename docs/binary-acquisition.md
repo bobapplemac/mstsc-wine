@@ -20,9 +20,7 @@ Copy from `C:\Windows\System32\`, keeping the `en-US` sub-folder:
 
 ### Also needed (2026-11-14)
 
-Put these in sub-folders of the same import folder; the launcher maps them into `C:\windows`:
-
-| Path in import folder | Copy from | Why |
+| Path under `Windows\` | Copy from | Why |
 |---|---|---|
 | `SystemResources\mstsc.exe.mun` | `C:\Windows\SystemResources\` | mstsc banner/chevron images (R-010) |
 | `SystemResources\mstscax.dll.mun` (if present) | same | control images |
@@ -35,10 +33,24 @@ Fonts are Microsoft-licensed too: never commit or package them (`.gitignore` cov
 If the Windows display language is not English, also copy the matching
 `<lang>\*.mui` folders.
 
+## Folder layout
+
+Mirror `C:\Windows`. The repo-root `Windows/` folder is gitignored for this purpose:
+
+```
+Windows/
+  system32/            mstsc.exe, mstscax.dll, dui70.dll, devobj.dll, en-US/*.mui
+  Fonts/               *.ttf
+  SystemResources/     *.mun
+```
+
+The component store keeps paths relative to `C:\windows`, and `init` installs them there.
+A flat folder of system32 files (the older layout) is still accepted and stored under `system32/`.
+
 ## Import
 
 ```bash
-launcher/mstsc-wine import /path/to/folder   # copies + hashes into $XDG_DATA_HOME/mstsc-wine/components/<version>
+launcher/mstsc-wine import Windows           # or /path/to/folder   # copies + hashes into $XDG_DATA_HOME/mstsc-wine/components/<version>
 launcher/mstsc-wine init                     # verifies hashes (fail closed), installs into the prefix
 launcher/mstsc-wine doctor
 ```
