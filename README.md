@@ -23,7 +23,7 @@ Not done or not yet tested:
 - Copying folder trees through the clipboard, and two sessions at once.
 - Packaging.
 
-- Authoritative spec: [MSTSC-Wine-Master-Specification.md](MSTSC-Wine-Master-Specification.md)
+- Authoritative spec: [docs/MSTSC-Wine-Master-Specification.md](docs/MSTSC-Wine-Master-Specification.md)
 - Microsoft files you must supply: [docs/binary-acquisition.md](docs/binary-acquisition.md)
 - Findings / experiments / decisions: [docs/RESEARCH.md](docs/RESEARCH.md),
   [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), [docs/DECISIONS/](docs/DECISIONS/)

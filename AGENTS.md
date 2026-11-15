@@ -1,6 +1,6 @@
 # Agent workflow contract
 
-1. The spec (`MSTSC-Wine-Master-Specification.md`) is authoritative. Never substitute
+1. The spec (`docs/MSTSC-Wine-Master-Specification.md`) is authoritative. Never substitute
    FreeRDP/VMs, and never weaken an acceptance criterion silently.
 2. Never commit Microsoft binaries (`.gitignore` enforces this), credentials or real hostnames.
 3. Wine changes: reproduce on the unmodified baseline first (`build/install-wine-11.0`),
