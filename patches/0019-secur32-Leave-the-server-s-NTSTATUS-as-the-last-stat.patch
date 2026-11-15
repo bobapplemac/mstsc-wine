@@ -1,0 +1,54 @@
+From 7e25c732fae4de3305d3925d54fbc900d8b9f601 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sat, 14 Nov 2026 21:27:16 -0500
+Subject: [PATCH] secur32: Leave the server's NTSTATUS as the last status when
+ CredSSP fails.
+
+A server rejecting the delegated logon sends its NTSTATUS in
+TSRequest.errorCode (STATUS_LOGON_FAILURE for a wrong password).  Windows
+leaves that status as the thread's last status, and the Remote Desktop
+client reads it with RtlGetLastNtStatus: STATUS_LOGON_FAILURE makes it
+report the failed logon and prompt again; anything else makes it retry the
+connection without NLA, which with a server that does not require NLA ends
+on the server's own logon screen.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/secur32/credssp.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/dlls/secur32/credssp.c b/dlls/secur32/credssp.c
+index bb9c4c43..eeeea0c6 100644
+--- a/dlls/secur32/credssp.c
++++ b/dlls/secur32/credssp.c
+@@ -109,6 +109,7 @@ struct credssp_ctx
+     BYTE    *pubkey;         /* server's SubjectPublicKey */
+     DWORD    pubkey_len;
+     ULONG    server_auth;    /* CREDSSP_SERVER_AUTH_* */
++    NTSTATUS server_status;  /* TSRequest.errorCode, if the server reported a failure */
+     CERT_TRUST_STATUS trust; /* of the server certificate chain */
+     BYTE    *plain;          /* decrypted, not yet complete TSRequest */
+     DWORD    plain_len;
+@@ -913,6 +914,7 @@ static SECURITY_STATUS process_ts_request( struct credssp_ctx *ctx, const struct
+     if (req->has_error)
+     {
+         WARN( "server reported error %#lx\n", req->error );
++        if ((req->error & 0xc0000000) == 0xc0000000) ctx->server_status = req->error;
+         return map_error_code( req->error );
+     }
+ 
+@@ -1223,6 +1225,11 @@ static SECURITY_STATUS SEC_ENTRY credssp_InitializeSecurityContextW( PCredHandle
+         ctx->state = STATE_FAILED;
+         set_output( ctx, out, NULL, 0 );
+         free_blob( &output );
++        /* Windows leaves the server's NTSTATUS as the thread's last status; the Remote
++         * Desktop client reads it (RtlGetLastNtStatus) to tell a failed logon, which it
++         * reports and prompts again for, from a server that cannot do NLA, for which it
++         * retries without NLA. */
++        if (ctx->server_status) RtlNtStatusToDosError( ctx->server_status );
+         return status;
+     }
+     out_status = set_output( ctx, out, output.data, output.len );
+-- 
+2.47.3
+

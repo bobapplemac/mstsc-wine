@@ -24,5 +24,8 @@ grep -q 'password matches' "$OUT/server-$((PORT+1)).log" || { echo "FAIL packed 
 attempt $((PORT+3)) cssp-test-pass-1 saved || exit 1
 grep -q 'password matches' "$OUT/server-$((PORT+3)).log" || { echo "FAIL saved credentials not delegated"; exit 1; }
 echo "PASS saved credentials delegated"
-if attempt $((PORT+2)) wrong-password >/dev/null; then echo "FAIL wrong password accepted"; exit 1; fi
+out=$(attempt $((PORT+2)) wrong-password) && { echo "FAIL wrong password accepted"; exit 1; }
 echo "PASS wrong password rejected"
+# the server's STATUS_LOGON_FAILURE must be left as the last status (EXP-038, ADR-0022)
+grep -q 'last status 0xc000006d' <<< "$out" || { echo "FAIL last status after logon failure: $out"; exit 1; }
+echo "PASS logon failure reported as STATUS_LOGON_FAILURE"

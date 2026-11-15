@@ -248,3 +248,16 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   only be observed against Windows. Tests seed the saved credential directly (V).
 - Saved settings in a prefix (`Default.rdp`, `LastBBarXPos`/`LastBBarWidth`) move the
   connection bar; GUI tests that click it must reset them (V).
+
+## R-022 How mstsc tells a wrong password from a server without NLA (V)
+- After a failed NLA handshake, mstscax reads `ntdll!RtlGetLastNtStatus()` (security
+  filter helper, stored at object offset `0x164`). `SslFilter::MapErrorCode(hr,
+  lastStatusError)` turns `SEC_E_LOGON_DENIED` + `STATUS_LOGON_FAILURE` into "logon
+  failed" (re-prompt). It has specific reasons for `0xC0000064`, `0xC000006E`–`0xC0000072`,
+  `0xC000015B`, `0xC0000193`, `0xC0000224`, `0xC0000234`, `0xC0000380/381`, `0xC0000408`.
+  Anything else means a generic failure, then a retry without NLA.
+- Windows servers put the NTSTATUS in `TSRequest.errorCode` (EXP-030). pyspnego sends an
+  HRESULT there.
+- winedbg breakpoints work when attached (`--file` script, `attach 0x<pid>`). Earlier
+  "breakpoints never hit" (R-021 work) were breakpoints on unused code paths. mstscax
+  loads at `0x6ffffa6d0000` (relocated from `0x16a600000`).

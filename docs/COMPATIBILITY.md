@@ -43,6 +43,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-035 | 2026-11-14 | same | `tests/static/credui-prompt` (Wine's prompt, caption "Enter your credentials") | Caller gets `Enter your credentials\Administrator` for "Administrator": the classic dialog completes names with its target (the caption). **Fixed** by patch 0017 (ADR-0021) |
 | EXP-036 | 2026-11-14 | same, `+secur32,+ntlm` | Saved credential seeded for `TERMSRV/localhost`, genuine mstsc → `fake-rdp-credssp.py` | mstsc passes CredSSP submit type 51 with **no** SPNEGO credentials; Negotiate ran as the Linux user, server dropped the NTLM exchange. **Fixed** by patch 0018 (ADR-0020): saved password delegated, no prompt |
 | EXP-037 | 2026-11-14 | 0001–0018 | `<test-host>`, operator: old saved entry deleted, "Administrator" saved again with "Remember my password", then reconnect | **Works**: user name saved as typed, reconnect signs in with no mstsc prompt and no server logon screen |
+| EXP-038 | 2026-11-14 | 0001–0018, `+secur32`, winedbg | Genuine mstsc, wrong password → `fake-rdp-credssp.py` (server sends `STATUS_LOGON_FAILURE`, as Windows does) | CredSSP returns `SEC_E_LOGON_DENIED`, but mstsc reads `RtlGetLastNtStatus()` (stale `0xC0000034`), treats it as "no NLA" and retries with `requestedProtocols=1`. Against `<test-host>` (NLA not required) that ends on the server's logon screen (operator). **Fixed** by patch 0019 (ADR-0022): "Your credentials did not work" re-prompt, no retry; confirmed by the operator against `<test-host>` |
 
 ## Reproducible tests
 
@@ -64,6 +65,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | Fullscreen Restore/Maximize (GUI) | `tests/launch/test-fullscreen-restore.sh` (needs `freerdp3-shadow-x11`, Xvfb, muffin or metacity) | patch 0016, genuine mstsc end to end |
 | Credential prompt user name | `tests/static/credui-prompt/build.sh OUT && run.sh WINE OUT` (own Xephyr `:9`) | patch 0017 |
 | Saved credentials (CredSSP) | `tests/static/credssp-client` "saved" mode (part of its `run.sh`); `tests/security/credssp/run.sh` phase 2 with the genuine mstsc | patch 0018 |
+| Wrong password re-prompt | `tests/static/credssp-client/run.sh` (last status check); `tests/security/credssp/run.sh` phase 3 with the genuine mstsc | patch 0019 |
 | mstscax probe (needs registration) | `wine cscript //nologo tests/launch/probe-mstscax.js` | ProgID activation, `Version` |
 
 ## Phase 1 acceptance status (T-001…T-021)

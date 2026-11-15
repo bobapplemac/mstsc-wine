@@ -6,6 +6,8 @@
 #     verifies the delegated password and receives the MCS Connect Initial.
 #  2. With a saved credential for TERMSRV/localhost ("Remember my password"), mstsc connects
 #     without a prompt and CredSSP delegates the saved password (EXP-036, ADR-0020).
+#  3. A wrong password gets "Your credentials did not work" again, as on Windows, not a
+#     retry without NLA (EXP-038, ADR-0022).
 # Needs the mingw cross compiler for the seeding helper (phase 2 is skipped without it).
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd); HERE=$ROOT/tests/security/credssp
@@ -53,5 +55,22 @@ if command -v x86_64-w64-mingw32-gcc >/dev/null && \
 else
     echo "SKIP saved credentials (no mingw cross compiler)"
 fi
+
+# phase 3: wrong password
+rm -rf "$OUT/pfx3"; cp -a --reflink=auto "$SRC" "$OUT/pfx3"
+"$ROOT/tests/lib/xephyr.sh" start :5 || exit 1
+NTLM_USER_FILE=$OUT/users FAKE_RDP_HOLD=3 "$HERE/fake-rdp-credssp.py" $((PORT+2)) "$OUT/cert.pem" "$OUT/key.pem" 50 > "$OUT/server3.log" 2>&1 &
+srv=$!; sleep 1
+DISPLAY=:5 MSTSC_WINE_PREFIX=$OUT/pfx3 MSTSC_WINE_STATE=$OUT/state3 timeout 45 \
+    "$ROOT/launcher/mstsc-wine" run "/v:localhost:$((PORT+2))" >/dev/null 2>&1 &
+cli=$!
+"$ROOT/tests/lib/enter-credentials.sh" :5 'TESTDOM\nla-test' 'wrong-password-1' 40 || fail=$((fail+1))
+reprompt=0
+PYTHONPATH=$ROOT/.deps/py python3 "$ROOT/tools/xwait.py" :5 '^Your credentials did not work$' 20 >/dev/null && reprompt=1
+sleep 1
+kill $cli 2>/dev/null; WINEPREFIX=$OUT/pfx3 "$ROOT/build/install-wine-patched/bin/wineserver" -k 2>/dev/null
+kill $srv 2>/dev/null; wait 2>/dev/null
+check "wrong password: mstsc prompts again" $reprompt
+check "wrong password: no retry without NLA" $(grep -q 'requestedProtocols=1$' "$OUT/server3.log" || echo 1)
 echo "$fail failure(s)"
 exit $((fail > 0))

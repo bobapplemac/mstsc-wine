@@ -35,6 +35,16 @@ def _compute_response_v2(nt_hash, server_challenge, client_challenge, time, av_p
     return proof + temp, hmac_md5(nt_hash, server_challenge + client_challenge) + client_challenge, hmac_md5(nt_hash, proof)
 _ntlm.compute_response_v2 = _compute_response_v2
 
+# A Windows server reports a failed logon in TSRequest.errorCode as the NTSTATUS
+# STATUS_LOGON_FAILURE (EXP-030); pyspnego sends the HRESULT SEC_E_LOGON_DENIED instead.
+import spnego._credssp as _cssp
+_TSRequest = _cssp.TSRequest
+class _WindowsTSRequest(_TSRequest):
+    def __init__(self, *args, error_code=None, **kwargs):
+        if error_code is not None and error_code & 0xFFFFFFFF == 0x8009030C: error_code = -0x3FFFFF93  # 0xC000006D, signed like pyspnego
+        super().__init__(*args, error_code=error_code, **kwargs)
+_cssp.TSRequest = _WindowsTSRequest
+
 port, cert, key = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 deadline = time.time() + (float(sys.argv[4]) if len(sys.argv) > 4 else 60)
 expected = open(os.environ["NTLM_USER_FILE"]).read().strip().split(":", 2)

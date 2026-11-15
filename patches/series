@@ -16,3 +16,4 @@
 0016-winex11-Release-fullscreen-cursor-clipping-when-a-wi.patch
 0017-credui-Keep-generic-user-names-as-typed-in-the-crede.patch
 0018-secur32-Delegate-saved-credentials-in-CredSSP-when-n.patch
+0019-secur32-Leave-the-server-s-NTSTATUS-as-the-last-stat.patch

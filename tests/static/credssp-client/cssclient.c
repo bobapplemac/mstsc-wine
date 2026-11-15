@@ -15,6 +15,9 @@
 #include <schannel.h>
 #include <ntsecapi.h>
 #include <wincred.h>
+#include <winternl.h>
+
+NTSTATUS NTAPI RtlGetLastNtStatus(void);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -119,7 +122,9 @@ int main(int argc, char **argv)
             if (!recv_some(s, in, &in_len, sizeof(in))) { printf("FAIL connection closed\n"); return 1; }
             continue;
         }
-        printf("FAIL InitializeSecurityContext %#lx\n", st);
+        /* mstsc tells a failed logon (re-prompt) from a server without NLA (retry
+         * without it) by the thread's last NTSTATUS, which Windows leaves set */
+        printf("FAIL InitializeSecurityContext %#lx, last status %#lx\n", st, RtlGetLastNtStatus());
         return 1;
     }
 
