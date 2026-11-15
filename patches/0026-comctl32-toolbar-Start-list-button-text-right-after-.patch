@@ -1,0 +1,36 @@
+From 0d498c3fadc6c0fcdf881726ef0b52ab19ef5eae Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 14:51:04 -0500
+Subject: [PATCH 26/28] comctl32/toolbar: Start list button text right after
+ the bitmap and list gap.
+
+TOOLBAR_MeasureButton() sizes a list-style button for
+2 * cxedge + bitmap width + iListGap + text width + padding, but
+TOOLBAR_DrawButton() started the text two pixels further right. With
+TB_SETPADDING cx = 0, as mstsc uses for its "Show Options" expander, an
+autosized button was then two pixels too narrow for its own label and
+the text was cut off with an ellipsis ("Show Optio...").
+
+On Windows the text starts right after the bitmap and the list gap.
+---
+ dlls/comctl32/toolbar.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/comctl32/toolbar.c b/dlls/comctl32/toolbar.c
+index 3826b18d..3dc53ac3 100644
+--- a/dlls/comctl32/toolbar.c
++++ b/dlls/comctl32/toolbar.c
+@@ -1058,7 +1058,9 @@ TOOLBAR_DrawButton (const TOOLBAR_INFO *infoPtr, TBUTTON_INFO *btnPtr, HDC hdc,
+         InflateRect(&rcText, -GetSystemMetrics(SM_CXEDGE), 0);
+         if (dwStyle & TBSTYLE_LIST)
+         {
+-            rcText.left += infoPtr->nBitmapWidth + infoPtr->iListGap + 2;
++            /* The text starts right after the bitmap and the list gap, as on Windows. This also
++             * leaves the text exactly the width TOOLBAR_MeasureButton() reserved for it. */
++            rcText.left += infoPtr->nBitmapWidth + infoPtr->iListGap;
+         }
+         else
+         {
+-- 
+2.47.3
+

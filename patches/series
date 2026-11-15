@@ -23,3 +23,6 @@
 0023-kerberos-Use-the-realm-of-a-user-principal-name-in-u.patch
 0024-kerberos-Give-target-names-without-a-realm-the-refer.patch
 0025-kerberos-Keep-tickets-for-explicit-credentials-in-a-.patch
+0026-comctl32-toolbar-Start-list-button-text-right-after-.patch
+0027-server-Invalidate-a-child-moved-into-an-invalid-part.patch
+0028-win32u-Use-the-v35-TrueType-interpreter-for-Windows-.patch

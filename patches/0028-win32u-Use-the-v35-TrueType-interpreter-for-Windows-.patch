@@ -1,0 +1,38 @@
+From c1938fa4487599cc2e6ee94bf930f1a915a3f722 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 14:51:04 -0500
+Subject: [PATCH 28/28] win32u: Use the v35 TrueType interpreter for Windows
+ advance widths.
+
+Windows GDI lays text out with the advance widths of fully hinted
+glyphs. FreeType's default v40 interpreter ignores horizontal hinting,
+so text in hinted fonts such as Microsoft Sans Serif comes out wider
+than on Windows: mstsc's dialog text wraps a word early. Select the v35
+interpreter unless FREETYPE_PROPERTIES chooses one.
+---
+ dlls/win32u/freetype.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
+index aeae190b..18c11f35 100644
+--- a/dlls/win32u/freetype.c
++++ b/dlls/win32u/freetype.c
+@@ -1515,8 +1515,13 @@ static BOOL init_freetype(void)
+                        ((FT_Version.minor <<  8) & 0x00ff00) |
+                        ((FT_Version.patch      ) & 0x0000ff);
+ 
+-    /* In FreeType < 2.8.1 v40's FT_LOAD_TARGET_MONO has broken advance widths. */
+-    if (FT_SimpleVersion < FT_VERSION_VALUE(2, 8, 1))
++    /* In FreeType < 2.8.1 v40's FT_LOAD_TARGET_MONO has broken advance widths.
++     * Windows GDI also lays text out with the advance widths of fully hinted glyphs, while the
++     * v40 interpreter ignores horizontal hinting: text set in hinted fonts (Microsoft Sans
++     * Serif, Tahoma) comes out wider than on Windows, and dialog labels wrap early or get
++     * truncated.  Use the v35 interpreter unless FREETYPE_PROPERTIES chooses one. */
++    if (FT_SimpleVersion < FT_VERSION_VALUE(2, 8, 1) ||
++        !getenv( "FREETYPE_PROPERTIES" ) || !strstr( getenv( "FREETYPE_PROPERTIES" ), "interpreter-version" ))
+     {
+         FT_UInt interpreter_version = 35;
+         pFT_Property_Set( library, "truetype", "interpreter-version", &interpreter_version );
+-- 
+2.47.3
+

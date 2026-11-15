@@ -295,3 +295,33 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   package. The test server installs a stand-in module.
 - The KDC for tests is Debian's MIT krb5-kdc unpacked under `.deps` (`tools/fetch-krb5kdc.sh`).
   It runs as the user on a high port, with no system configuration.
+
+## R-025 How the genuine mstsc dialog gets its look (V/I)
+- Fonts (V, EXP-044):
+  - The connection dialog's templates in `mstsc.exe.mui` use `MS Shell Dlg` 8pt. Only the
+    RemoteApp and Desktop Connections pages (417–419, Segoe UI 9pt) and three untitled
+    templates (20019, 20050, 20090; Segoe UI 10pt) differ.
+  - `MS Shell Dlg` maps to Microsoft Sans Serif on Windows and in the prefix; the genuine
+    `micross.ttf` is installed. The Windows Server 2022 screenshots show Microsoft Sans
+    Serif, not Segoe UI.
+  - The banner fonts are created by mstsc itself with the face name "Tahoma" hard-coded
+    (-20 px regular, -24 px bold), on Windows too.
+  - mstsc does not use the system message font (`SPI_GETNONCLIENTMETRICS`) for its
+    dialog text.
+- Sizes (V): the collapsed client area is 405x221 on both systems. The dialog units match
+  because the base units come from the same font.
+- Text widths (V): Windows GDI advances hinted glyphs; FreeType v40 ignores horizontal
+  hinting. The difference (about 5%) is enough to change where lines wrap (ADR-0031).
+- Animation (V, EXP-043): **Show Options** grows the window from a worker thread in about
+  six steps and moves the bottom row in `WM_WINDOWPOSCHANGED` after each step.
+- Theme (V/I, EXP-045):
+  - mstsc loads `uxtheme.dll` at run time and calls `EnableThemeDialogTexture(hwnd,
+    ETDT_ENABLE)` on the main dialog, the collapsed credentials panel and the General page.
+  - It never calls it on the credentials sub-dialog inside the General page. That
+    sub-dialog is grey in Wine and white on Windows.
+  - How Windows makes it white is not established (H: a texture inherited from a textured
+    `DS_CONTROL` parent, or `ETDT_ENABLE` meaning more than Wine implements).
+- Other small differences (I): Windows 10 button faces are drawn 1 px inside the button
+  rectangle on each side; the Logon/Connection settings group boxes leave a gap around their
+  captions; the tab row is a few pixels taller. These are theme drawing, not layout.
+

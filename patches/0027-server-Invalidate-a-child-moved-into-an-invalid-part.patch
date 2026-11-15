@@ -1,0 +1,71 @@
+From fd356d4465e27365fc38b87d5f959a42d29b9509 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 14:51:04 -0500
+Subject: [PATCH 27/28] server: Invalidate a child moved into an invalid part
+ of its parent.
+
+When a child window is moved or resized with its bits copied, the part
+of its new rectangle that is still invalid in a parent without
+WS_CLIPCHILDREN is painted over when the parent paints, but the child
+was not invalidated there and stayed blank. redraw_window() already
+invalidates such children when the parent is invalidated while they are
+in place; do the same when a child moves into an invalid area.
+
+mstsc's "Show Options" grows its dialog in steps and moves the Connect
+and Help buttons into the newly exposed area each time; they vanished.
+---
+ server/window.c | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/server/window.c b/server/window.c
+index d58f643f..10a63821 100644
+--- a/server/window.c
++++ b/server/window.c
+@@ -1929,6 +1929,34 @@ static struct region *expose_window( struct window *win, const struct rectangle
+ }
+ 
+ 
++/* A child that moves or grows into a part of its parent that is still invalid would be
++ * painted over when the parent paints, since a parent without WS_CLIPCHILDREN does not
++ * clip its children.  Invalidate that part of the child too, as redraw_window() does when
++ * the parent is invalidated while the child is already there. */
++static void invalidate_child_under_parent_update( struct window *win )
++{
++    struct window *parent = win->parent;
++    struct region *tmp;
++
++    if (!parent || is_desktop_window( parent ) || !parent->update_region) return;
++    if (parent->style & WS_CLIPCHILDREN) return;
++    if (!(tmp = create_empty_region())) return;
++    if (copy_region( tmp, parent->update_region ))
++    {
++        /* parent window coords -> parent client coords */
++        offset_region( tmp, parent->window_rect.left - parent->client_rect.left,
++                       parent->window_rect.top - parent->client_rect.top );
++        map_dpi_region( win, tmp, get_window_dpi( parent ), get_window_dpi( win ) );
++        if (rect_in_region( tmp, &win->window_rect ))
++        {
++            /* parent client coords -> child client coords */
++            offset_region( tmp, -win->client_rect.left, -win->client_rect.top );
++            redraw_window( win, tmp, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN, 1 );
++        }
++    }
++    free_region( tmp );
++}
++
+ /* set the window and client rectangles, updating the update region if necessary */
+ static void set_window_pos( struct window *win, struct window *previous,
+                             unsigned int swp_flags, const struct rectangle *window_rect,
+@@ -2093,6 +2121,9 @@ static void set_window_pos( struct window *win, struct window *previous,
+     if (exposed_rgn)
+         redraw_window( win, exposed_rgn, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN, 0 );
+ 
++    if (!(swp_flags & SWP_NOREDRAW) && memcmp( window_rect, &old_window_rect, sizeof(old_window_rect) ))
++        invalidate_child_under_parent_update( win );
++
+ done:
+     if (old_vis_rgn) free_region( old_vis_rgn );
+     if (exposed_rgn) free_region( exposed_rgn );
+-- 
+2.47.3
+

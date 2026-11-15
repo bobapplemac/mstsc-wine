@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-14_
+_Last updated: 2026-11-15_
 
 ## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 
@@ -30,13 +30,22 @@ _Last updated: 2026-11-14_
 - Kerberos: works without joining the domain (patches 0022–0025, ADR-0025–0028), offline against an MIT realm and live against `<domain-rdp-host>` in `<test-domain>`. Sign in as `user@dns.domain` (or `dns.domain\user`). No certificate warning then, as on Windows.
 - Re-prompt dialog: the whole message is shown, wrapped, and the password field is empty, as on Windows (patches 0020–0021, ADR-0023/0024). Verified offline with the genuine mstsc and confirmed by the operator against `<test-host>`.
 - Fullscreen → windowed: Restore then Maximize works under muffin and metacity (patch 0016, ADR-0019), confirmed by the operator on the real Cinnamon desktop against the Windows host. KDE/XWayland still to test.
+- Connection dialog looks like Windows Server 2022 (EXP-042–045, R-025):
+  - "Show Options"/"Hide Options" are no longer cut off (patch 0026, ADR-0029).
+  - Connect and Help stay visible after expanding (patch 0027, ADR-0030; a wineserver repaint bug, also in unmodified Wine 11.0).
+  - Text is as wide as on Windows, so the message wraps as on Windows (patch 0028, ADR-0031). The fonts were already right: Microsoft Sans Serif for the body, Tahoma for the banner, as on Windows.
+  - Test: `tests/static/dialog-layout` (in the regression suite).
+  - Remaining differences (cosmetic, not fixed):
+    - the credentials sub-dialog on the General tab is grey instead of white (theme texture, EXP-045);
+    - Windows 10 button and group-box drawing details.
 
 ## Blockers (need human input)
 1. A domain-joined test host (Kerberos) when available. The current host covers NLA with NTLM.
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-1. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
-2. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-3. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
-4. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.
+1. Dialog cosmetics: white tab texture for the credentials sub-dialog on the General tab (EXP-045, R-025). Clipboard redirection is not yet checked on a live session (operator suspects copy/paste is missing; not confirmed here).
+2. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
+3. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
+4. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
+5. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.
