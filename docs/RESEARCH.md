@@ -261,3 +261,14 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
 - winedbg breakpoints work when attached (`--file` script, `attach 0x<pid>`). Earlier
   "breakpoints never hit" (R-021 work) were breakpoints on unused code paths. mstscax
   loads at `0x6ffffa6d0000` (relocated from `0x16a600000`).
+
+## R-023 mstsc's re-prompt dialog (V/I)
+- mstsc's re-prompt calls `CredUIPromptForWindowsCredentialsW` with the caption "Your
+  credentials did not work", the error `SEC_E_LOGON_DENIED`, and the buffer it got back
+  from the first prompt, which holds the old user name and password (V, `+credui`).
+- Message text (V, `mstscax.dll.mui`): "The credentials that were used to connect to %s did
+  not work. Please enter new credentials." It needs two lines or more in the classic
+  dialog, more with a long host name.
+- On Windows the password field is empty after a failed logon (V, operator). Windows'
+  behaviour for an input buffer without an error is not checked (H: it fills the fields);
+  Wine keeps filling both there.

@@ -40,7 +40,7 @@ CSSP=$ROOT/artifacts/credssp-client
 check "credssp: NLA client (delegation, saved credentials, server auth flags, bad password)" $exp_fix env ${LDP:+LD_LIBRARY_PATH=$LDP} "$ROOT/tests/static/credssp-client/run.sh" "$W" "$CSSP"
 CUP=$ROOT/artifacts/credui-prompt
 "$ROOT/tests/static/credui-prompt/build.sh" "$CUP" >/dev/null 2>&1 || { echo "credui-prompt fixture build failed"; exit 1; }
-check "credui: prompt returns a user name without a domain as typed" $exp_fix "$ROOT/tests/static/credui-prompt/run.sh" "$W" "$CUP"
+check "credui: prompt keeps the user name, wraps long messages, clears the password on re-prompt" $exp_fix "$ROOT/tests/static/credui-prompt/run.sh" "$W" "$CUP"
 FSC=$ROOT/artifacts/fullscreen-clip
 "$ROOT/tests/static/fullscreen-clip/build.sh" "$FSC" >/dev/null 2>&1 || { echo "fullscreen-clip fixture build failed"; exit 1; }
 check "winex11: leaving fullscreen releases the pointer grab" $exp_fix "$ROOT/tests/static/fullscreen-clip/run.sh" "$W" "$FSC"

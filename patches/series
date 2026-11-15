@@ -17,3 +17,5 @@
 0017-credui-Keep-generic-user-names-as-typed-in-the-crede.patch
 0018-secur32-Delegate-saved-credentials-in-CredSSP-when-n.patch
 0019-secur32-Leave-the-server-s-NTSTATUS-as-the-last-stat.patch
+0020-credui-Wrap-long-messages-in-the-credential-dialog.patch
+0021-credui-Do-not-prefill-the-password-when-asking-again.patch
