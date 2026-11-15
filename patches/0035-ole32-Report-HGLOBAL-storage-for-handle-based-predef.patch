@@ -1,0 +1,133 @@
+From 2a2fe76fc05f14ae46e6f3d07627800ed0fcb2df Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 18:09:56 -0500
+Subject: [PATCH 35/38] ole32: Report HGLOBAL storage for handle-based
+ predefined clipboard formats.
+
+When the clipboard was set without OLE, the clipboard data object
+enumerates CF_DIB, CF_DIBV5, CF_LOCALE and the other HGLOBAL formats
+with TYMED_NULL, so GetData() for them failed with DV_E_TYMED. Windows
+reports TYMED_ISTREAM | TYMED_HGLOBAL, as for text (the CF_LOCALE check
+was todo_wine). Remote Desktop reads pictures with OleGetClipboard(), so
+pictures copied in native applications could not be pasted remotely.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/ole32/clipboard.c       |  8 +++++
+ dlls/ole32/tests/clipboard.c | 67 +++++++++++++++++++++++++++++++++++-
+ 2 files changed, 74 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/ole32/clipboard.c b/dlls/ole32/clipboard.c
+index c5460898..4a9baaba 100644
+--- a/dlls/ole32/clipboard.c
++++ b/dlls/ole32/clipboard.c
+@@ -1197,6 +1197,14 @@ static DWORD get_tymed_from_nonole_cf(UINT cf)
+     case CF_OEMTEXT:
+     case CF_UNICODETEXT:
+     case CF_HDROP:
++    case CF_DIB:
++    case CF_DIBV5:
++    case CF_LOCALE:
++    case CF_SYLK:
++    case CF_DIF:
++    case CF_TIFF:
++    case CF_RIFF:
++    case CF_WAVE:
+         return TYMED_ISTREAM | TYMED_HGLOBAL;
+     case CF_ENHMETAFILE:
+         return TYMED_ENHMF;
+diff --git a/dlls/ole32/tests/clipboard.c b/dlls/ole32/tests/clipboard.c
+index 50e4e8c2..af27f9c8 100644
+--- a/dlls/ole32/tests/clipboard.c
++++ b/dlls/ole32/tests/clipboard.c
+@@ -1669,7 +1669,7 @@ static void test_nonole_clipboard(void)
+     ok(fmt.ptd == NULL, "ptd %p\n", fmt.ptd);
+     ok(fmt.dwAspect == DVASPECT_CONTENT, "aspect %lx\n", fmt.dwAspect);
+     ok(fmt.lindex == -1, "lindex %ld\n", fmt.lindex);
+-    todo_wine ok(fmt.tymed == (TYMED_ISTREAM | TYMED_HGLOBAL), "tymed %lx\n", fmt.tymed);
++    ok(fmt.tymed == (TYMED_ISTREAM | TYMED_HGLOBAL), "tymed %lx\n", fmt.tymed);
+ 
+     hr = IEnumFORMATETC_Next(enum_fmt, 1, &fmt, NULL);
+     ok(hr == S_OK, "got %08lx\n", hr);
+@@ -1925,6 +1925,70 @@ static void test_get_clipboard_locked(void)
+     OleUninitialize();
+ }
+ 
++static void test_nonole_dib(void)
++{
++    FORMATETC fmt = { CF_DIB, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
++    IEnumFORMATETC *enum_fmt;
++    BITMAPINFOHEADER *bih;
++    IDataObject *get;
++    STGMEDIUM med;
++    HGLOBAL hdib;
++    HRESULT hr;
++    BOOL r;
++    HANDLE h;
++
++    hdib = GlobalAlloc(GMEM_DDESHARE | GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(*bih) + 8);
++    bih = GlobalLock(hdib);
++    bih->biSize = sizeof(*bih);
++    bih->biWidth = 2;
++    bih->biHeight = 1;
++    bih->biPlanes = 1;
++    bih->biBitCount = 24;
++    GlobalUnlock(hdib);
++
++    OleInitialize(NULL);
++    r = OpenClipboard(NULL);
++    ok(r, "gle %ld\n", GetLastError());
++    r = EmptyClipboard();
++    ok(r, "gle %ld\n", GetLastError());
++    h = SetClipboardData(CF_DIB, hdib);
++    ok(h == hdib, "got %p\n", h);
++    r = CloseClipboard();
++    ok(r, "gle %ld\n", GetLastError());
++
++    hr = OleGetClipboard(&get);
++    ok(hr == S_OK, "got %08lx\n", hr);
++    hr = IDataObject_EnumFormatEtc(get, DATADIR_GET, &enum_fmt);
++    ok(hr == S_OK, "got %08lx\n", hr);
++    while (IEnumFORMATETC_Next(enum_fmt, 1, &fmt, NULL) == S_OK)
++        if (fmt.cfFormat == CF_DIB || fmt.cfFormat == CF_DIBV5)
++            ok(fmt.tymed == (TYMED_ISTREAM | TYMED_HGLOBAL), "cf %04x tymed %lx\n", fmt.cfFormat, fmt.tymed);
++    IEnumFORMATETC_Release(enum_fmt);
++
++    /* remote desktop clients read pictures this way */
++    fmt.cfFormat = CF_DIB;
++    fmt.tymed = TYMED_HGLOBAL;
++    hr = IDataObject_GetData(get, &fmt, &med);
++    ok(hr == S_OK, "got %08lx\n", hr);
++    if (hr == S_OK)
++    {
++        ok(med.tymed == TYMED_HGLOBAL, "tymed %lx\n", med.tymed);
++        bih = GlobalLock(med.hGlobal);
++        ok(bih->biWidth == 2 && bih->biBitCount == 24, "got %ldx%d\n", bih->biWidth, bih->biBitCount);
++        GlobalUnlock(med.hGlobal);
++        ReleaseStgMedium(&med);
++    }
++    IDataObject_Release(get);
++
++    r = OpenClipboard(NULL);
++    ok(r, "gle %ld\n", GetLastError());
++    r = EmptyClipboard();
++    ok(r, "gle %ld\n", GetLastError());
++    r = CloseClipboard();
++    ok(r, "gle %ld\n", GetLastError());
++    OleUninitialize();
++}
++
+ START_TEST(clipboard)
+ {
+     test_get_clipboard_uninitialized();
+@@ -1933,6 +1997,7 @@ START_TEST(clipboard)
+     test_consumer_refs();
+     test_flushed_getdata();
+     test_nonole_clipboard();
++    test_nonole_dib();
+     test_getdatahere();
+     test_multithreaded_clipboard();
+     test_get_clipboard_locked();
+-- 
+2.47.3
+

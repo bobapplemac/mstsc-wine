@@ -331,3 +331,34 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
 - Other small differences (I): Windows 10 button faces are drawn 1 px inside the button
   rectangle on each side; the tab row is a few pixels taller. These are theme drawing, not
   layout.
+
+## R-026 How mstsc's clipboard redirection uses Wine (V/I)
+- Channel (V, EXP-048): static virtual channel `cliprdr`. The general capability flags sent by mstsc are 0x1e:
+  long format names, stream file clip, no file paths, can lock clip data.
+- Local side (V, relay):
+  - A thread with the `RdpClipRdrWindowClass` window and `OleInitialize`.
+  - `AddClipboardFormatListener` and `GetUpdatedClipboardFormats` are resolved with `GetProcAddress`.
+  - Reading the local clipboard: `OleGetClipboard` + `GetData`.
+  - Remote data: `OleSetClipboard` with mstsc's own delayed-render data object.
+  - Remote files: FileGroupDescriptorW + FileContents (`TYMED_ISTREAM`, `lindex` = item) +
+    Preferred DropEffect.
+  - Local files: built by mstsc itself from CF_HDROP. It reads the files and serves FileContents
+    SIZE/RANGE requests, after the server has locked the data (Lock Clipboard Data PDU).
+- Diagnostics (V):
+  - mstscax logs errors with `OutputDebugStringW` (`+seh` shows them).
+  - Everything else goes to WPP (`TraceMessage`): message number and arguments only, no format strings.
+  - A temporary ntdll hook that calls the WPP control callback with all flags enabled, and prints each message
+    with its return addresses, located both failures (`hr` arguments 0x8007007f and 0x80040069).
+    Not in the patch series; recreate it locally when needed.
+- Enterprise data protection (V/I): `RdpEdpPolicyManager::CreateInstance` fails, because
+  `ole32!OleGetClipboardWithEnterpriseInfo`, `srpapi!SrpGetEnterpriseIds` and the WinRT
+  `ProtectionPolicyManager` are absent. The failure is logged and non-fatal: clipboard copy works without the
+  policy manager. Not implemented.
+- WIL feature probes (V): ~22,000 `GetProcAddress(ntdll, "RtlQueryFeatureConfiguration")` per session before
+  patch 0032. Any Windows 10 2004+ binary built with WIL does this.
+- X11 side (V):
+  - winex11's clipboard thread lives in explorer.exe.
+  - In Wine 11.0 its requests are flushed only after X input (ADR-0036).
+  - One X11 copy is imported twice (on SelectionClear and on the XFixes notification), which produces two
+    Windows clipboard updates (open).
+

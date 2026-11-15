@@ -1,0 +1,86 @@
+From a5a199862e8ebe8faeaf052cc3df06be755dd913 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 18:10:08 -0500
+Subject: [PATCH 37/38] winex11: Export CF_HDROP as
+ x-special/gnome-copied-files.
+
+GTK file managers (Nautilus, Nemo, Caja) paste files from this target
+("copy" followed by one URI per line), not from text/uri-list.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/winex11.drv/clipboard.c   | 23 ++++++++++++++++++++++-
+ dlls/winex11.drv/x11drv.h      |  1 +
+ dlls/winex11.drv/x11drv_main.c |  3 ++-
+ 3 files changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/winex11.drv/clipboard.c b/dlls/winex11.drv/clipboard.c
+index 08969f4e..d0e94871 100644
+--- a/dlls/winex11.drv/clipboard.c
++++ b/dlls/winex11.drv/clipboard.c
+@@ -172,6 +172,7 @@ static const struct
+     { 0, CF_WAVE,            XATOM_WCF_WAVE,            import_data,          export_data },
+     { 0, CF_ENHMETAFILE,     XATOM_WCF_ENHMETAFILE,     import_data,          export_data },
+     { 0, CF_HDROP,           XATOM_text_uri_list,       import_text_uri_list, export_hdrop },
++    { 0, CF_HDROP,           XATOM_x_special_gnome_copied_files, NULL,        export_hdrop },
+     { 0, CF_DIB,             XATOM_image_bmp,           import_image_bmp,     export_image_bmp },
+     { RichTextFormatW, 0,    XATOM_text_rtf,            import_data,          export_data },
+     { RichTextFormatW, 0,    XATOM_text_richtext,       import_data,          export_data },
+@@ -1527,7 +1528,27 @@ static BOOL export_hdrop( Display *display, Window win, Atom prop, Atom target,
+         textUriList[next++] = '\n';
+         free( unixFilename );
+     }
+-    put_property( display, win, prop, target, 8, textUriList, next );
++    if (target == x11drv_atom(x_special_gnome_copied_files))
++    {
++        /* GTK file managers paste files from this: "copy", then one URI per line */
++        char *list, *p, *src;
++        UINT len = 0;
++
++        if (!(list = malloc( next + 6 ))) goto failed;
++        memcpy( list, "copy\n", 5 );
++        len = 5;
++        for (src = textUriList; src < textUriList + next; src = p + 2)
++        {
++            p = memchr( src, '\r', textUriList + next - src );
++            memcpy( list + len, src, p - src );
++            len += p - src;
++            list[len++] = '\n';
++        }
++        len--; /* no newline after the last one */
++        put_property( display, win, prop, target, 8, list, len );
++        free( list );
++    }
++    else put_property( display, win, prop, target, 8, textUriList, next );
+     free( textUriList );
+     return TRUE;
+ 
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index 8d865467..de722f9f 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -573,6 +573,7 @@ enum x11drv_atoms
+     XATOM_text_rtf,
+     XATOM_text_richtext,
+     XATOM_text_uri_list,
++    XATOM_x_special_gnome_copied_files,
+     NB_XATOMS
+ };
+ 
+diff --git a/dlls/winex11.drv/x11drv_main.c b/dlls/winex11.drv/x11drv_main.c
+index 0b8eedad..9cdba29f 100644
+--- a/dlls/winex11.drv/x11drv_main.c
++++ b/dlls/winex11.drv/x11drv_main.c
+@@ -192,7 +192,8 @@ const char * const X11DRV_atom_names[NB_XATOMS - FIRST_XATOM] =
+     "text/plain",
+     "text/rtf",
+     "text/richtext",
+-    "text/uri-list"
++    "text/uri-list",
++    "x-special/gnome-copied-files"
+ };
+ 
+ /***********************************************************************
+-- 
+2.47.3
+

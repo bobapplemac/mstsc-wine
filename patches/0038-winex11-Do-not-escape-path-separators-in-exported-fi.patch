@@ -1,0 +1,51 @@
+From 1494ab3c6e9f1d499af0027c0ffc4056d09d8d8c Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 18:10:08 -0500
+Subject: [PATCH 38/38] winex11: Do not escape path separators in exported file
+ URIs.
+
+export_hdrop() percent-encoded every byte of the path, including '/'.
+An escaped '/' is data, not a separator (RFC 3986): GLib's
+g_filename_from_uri() rejects such URIs and g_file_get_path() returns
+NULL, so GTK applications could not open files copied in Wine. Escape
+only what is not an unreserved character or '/'.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/winex11.drv/clipboard.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/winex11.drv/clipboard.c b/dlls/winex11.drv/clipboard.c
+index d0e94871..0faf070c 100644
+--- a/dlls/winex11.drv/clipboard.c
++++ b/dlls/winex11.drv/clipboard.c
+@@ -1516,13 +1516,23 @@ static BOOL export_hdrop( Display *display, Window win, Atom prop, Atom target,
+         }
+         lstrcpyA(&textUriList[next], "file:///");
+         next += 8;
+-        /* URL encode everything - unnecessary, but easier/lighter than linking in shlwapi, and can't hurt */
++        /* Escape everything but the path separators and RFC 3986 unreserved characters.
++         * An escaped '/' is not a separator: GLib refuses to turn such a URI into a path,
++         * so GTK applications could not open the files. */
+         for (u = 1; unixFilename[u]; u++)
+         {
+             static const char hex_table[] = "0123456789abcdef";
++            unsigned char c = unixFilename[u];
++
++            if (c == '/' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
++                || c == '-' || c == '.' || c == '_' || c == '~')
++            {
++                textUriList[next++] = c;
++                continue;
++            }
+             textUriList[next++] = '%';
+-            textUriList[next++] = hex_table[(unsigned char)unixFilename[u] >> 4];
+-            textUriList[next++] = hex_table[unixFilename[u] & 0xf];
++            textUriList[next++] = hex_table[c >> 4];
++            textUriList[next++] = hex_table[c & 0xf];
+         }
+         textUriList[next++] = '\r';
+         textUriList[next++] = '\n';
+-- 
+2.47.3
+

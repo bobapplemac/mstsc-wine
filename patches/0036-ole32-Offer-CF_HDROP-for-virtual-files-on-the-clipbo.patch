@@ -1,0 +1,321 @@
+From 1a47782ca73272d72af10aebb591495c0b5ea4bb Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 18:09:56 -0500
+Subject: [PATCH 36/38] ole32: Offer CF_HDROP for virtual files on the
+ clipboard.
+
+Sources such as Remote Desktop, mail clients and archive managers put
+files on the OLE clipboard as FileGroupDescriptorW plus FileContents
+streams. On Windows, Explorer writes the streams to disk when pasting;
+native file managers only understand file names (text/uri-list), so
+such files could not be pasted outside of Wine.
+
+When the source data object has virtual files but no CF_HDROP, also
+offer a delayed-render CF_HDROP on the Win32 clipboard. Rendering it,
+on the clipboard owner's thread with the original data object, writes
+the files below %TEMP%\Clipboard\<unique>\ and returns the top-level
+names. Names that could leave that directory are skipped. The previous
+directory is removed on the next rendering. OLE consumers still see the
+source's own format list.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/ole32/clipboard.c | 233 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 233 insertions(+)
+
+diff --git a/dlls/ole32/clipboard.c b/dlls/ole32/clipboard.c
+index 4a9baaba..4bb2927a 100644
+--- a/dlls/ole32/clipboard.c
++++ b/dlls/ole32/clipboard.c
+@@ -71,6 +71,7 @@
+ #include "winerror.h"
+ #include "winnls.h"
+ #include "ole2.h"
++#include "shlobj.h"
+ #include "wine/debug.h"
+ #include "olestd.h"
+ 
+@@ -152,6 +153,7 @@ typedef struct ole_clipbrd
+     IDataObject *src_data;           /* Source object passed to OleSetClipboard */
+     ole_priv_data *cached_enum;      /* Cached result from the enumeration of src data object */
+     IStream *marshal_data;           /* Stream onto which to marshal src_data */
++    BOOL synth_hdrop;                /* CF_HDROP offered for virtual files of src_data */
+ } ole_clipbrd;
+ 
+ static inline snapshot *impl_from_IDataObject(IDataObject *iface)
+@@ -199,6 +201,13 @@ UINT link_source_descriptor_clipboard_format = 0;
+ UINT ole_private_data_clipboard_format = 0;
+ 
+ static UINT wine_marshal_clipboard_format;
++/* FILEDESCRIPTORW.dwFlags */
++#define FD_ATTRIBUTES  0x0004
++#define FD_WRITESTIME  0x0020
++#define FD_FILESIZE    0x0040
++
++static UINT file_group_descriptorW_clipboard_format;
++static UINT file_contents_clipboard_format;
+ 
+ static void register_clipboard_formats(void)
+ {
+@@ -215,6 +224,8 @@ static void register_clipboard_formats(void)
+     ole_private_data_clipboard_format = RegisterClipboardFormatW(L"Ole Private Data");
+ 
+     wine_marshal_clipboard_format = RegisterClipboardFormatW(L"Wine Marshalled DataObject");
++    file_group_descriptorW_clipboard_format = RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORW);
++    file_contents_clipboard_format = RegisterClipboardFormatW(CFSTR_FILECONTENTSW);
+ }
+ 
+ static BOOL WINAPI clipbrd_create(INIT_ONCE *init_once, void *parameter, void **context)
+@@ -1883,6 +1894,18 @@ static HRESULT set_clipboard_formats(ole_clipbrd *clipbrd, IDataObject *data)
+ 
+     IEnumFORMATETC_Release(enum_fmt);
+ 
++    /* Virtual files (FileGroupDescriptorW + FileContents streams) are pasted by Windows
++     * Explorer, which writes the streams to disk.  Native file managers only understand
++     * file names, so also offer CF_HDROP and write the files out when it is requested. */
++    clipbrd->synth_hdrop = find_format_in_list(priv_data->entries, count, file_group_descriptorW_clipboard_format)
++                           && find_format_in_list(priv_data->entries, count, file_contents_clipboard_format)
++                           && !find_format_in_list(priv_data->entries, count, CF_HDROP);
++    if (clipbrd->synth_hdrop)
++    {
++        TRACE("offering CF_HDROP for virtual files\n");
++        SetClipboardData(CF_HDROP, NULL);
++    }
++
+     /* Cache the list and fixup any target device offsets to ptrs */
+     clipbrd->cached_enum = HeapAlloc(GetProcessHeap(), 0, needed);
+     memcpy(clipbrd->cached_enum, priv_data, needed);
+@@ -1985,6 +2008,7 @@ static HRESULT set_src_dataobject(ole_clipbrd *clipbrd, IDataObject *data)
+         clipbrd->src_data = NULL;
+         HeapFree(GetProcessHeap(), 0, clipbrd->cached_enum);
+         clipbrd->cached_enum = NULL;
++        clipbrd->synth_hdrop = FALSE;
+     }
+ 
+     if(data)
+@@ -2050,6 +2074,213 @@ void clipbrd_destroy(void)
+     theOleClipboard = NULL;
+ }
+ 
++/***********************************************************************
++ *           delete_tree
++ */
++static void delete_tree(const WCHAR *dir)
++{
++    WIN32_FIND_DATAW fd;
++    WCHAR path[MAX_PATH];
++    HANDLE find;
++
++    swprintf(path, ARRAY_SIZE(path), L"%s\\*", dir);
++    if ((find = FindFirstFileW(path, &fd)) != INVALID_HANDLE_VALUE)
++    {
++        do
++        {
++            if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
++            swprintf(path, ARRAY_SIZE(path), L"%s\\%s", dir, fd.cFileName);
++            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) delete_tree(path);
++            else
++            {
++                SetFileAttributesW(path, FILE_ATTRIBUTE_NORMAL);
++                DeleteFileW(path);
++            }
++        } while (FindNextFileW(find, &fd));
++        FindClose(find);
++    }
++    RemoveDirectoryW(dir);
++}
++
++/***********************************************************************
++ *           create_parent_dirs
++ *
++ * Create the directories of a relative virtual file name below base.
++ */
++static void create_parent_dirs(const WCHAR *path, size_t base_len)
++{
++    WCHAR buf[MAX_PATH], *p;
++
++    lstrcpynW(buf, path, ARRAY_SIZE(buf));
++    for (p = buf + base_len + 1; (p = wcschr(p, '\\')); p++)
++    {
++        *p = 0;
++        CreateDirectoryW(buf, NULL);
++        *p = '\\';
++    }
++}
++
++/***********************************************************************
++ *           write_virtual_file
++ */
++static HRESULT write_virtual_file(IDataObject *data, LONG index, const WCHAR *path, const FILEDESCRIPTORW *desc)
++{
++    FORMATETC fmt = { file_contents_clipboard_format, NULL, DVASPECT_CONTENT, index, TYMED_ISTREAM | TYMED_HGLOBAL };
++    STGMEDIUM med;
++    HANDLE file;
++    HRESULT hr;
++    BYTE buf[65536];
++    DWORD written;
++    ULONG got;
++
++    if (FAILED(hr = IDataObject_GetData(data, &fmt, &med)))
++    {
++        WARN("no contents for %s: %#lx\n", debugstr_w(path), hr);
++        return hr;
++    }
++    file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
++    if (file == INVALID_HANDLE_VALUE)
++    {
++        ReleaseStgMedium(&med);
++        return HRESULT_FROM_WIN32(GetLastError());
++    }
++    if (med.tymed == TYMED_ISTREAM)
++    {
++        while (SUCCEEDED(hr = IStream_Read(med.pstm, buf, sizeof(buf), &got)) && got)
++            if (!WriteFile(file, buf, got, &written, NULL)) { hr = HRESULT_FROM_WIN32(GetLastError()); break; }
++        if (hr == S_FALSE) hr = S_OK;
++    }
++    else if (med.tymed == TYMED_HGLOBAL)
++    {
++        SIZE_T size = GlobalSize(med.hGlobal);
++        void *p = GlobalLock(med.hGlobal);
++
++        /* an HGLOBAL may be larger than the file */
++        if (desc->dwFlags & FD_FILESIZE && !desc->nFileSizeHigh && desc->nFileSizeLow < size)
++            size = desc->nFileSizeLow;
++        hr = WriteFile(file, p, size, &written, NULL) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
++        GlobalUnlock(med.hGlobal);
++    }
++    else hr = DV_E_TYMED;
++
++    if (SUCCEEDED(hr) && desc->dwFlags & FD_WRITESTIME)
++        SetFileTime(file, NULL, NULL, &desc->ftLastWriteTime);
++    CloseHandle(file);
++    ReleaseStgMedium(&med);
++    if (FAILED(hr)) DeleteFileW(path);
++    return hr;
++}
++
++/***********************************************************************
++ *           render_virtual_files
++ *
++ * Render CF_HDROP for a data object that only has virtual files: write
++ * them below a temporary directory, as Explorer does when pasting them.
++ */
++static HRESULT render_virtual_files(IDataObject *data)
++{
++    static WCHAR last_dir[MAX_PATH];
++    FORMATETC fmt = { file_group_descriptorW_clipboard_format, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
++    WCHAR dir[MAX_PATH], path[MAX_PATH];
++    FILEGROUPDESCRIPTORW *group;
++    DROPFILES *drop;
++    STGMEDIUM med;
++    HGLOBAL hdrop;
++    SIZE_T size, len = 0;
++    size_t dir_len;
++    HRESULT hr;
++    UINT i;
++    WCHAR *names;
++
++    if (FAILED(hr = IDataObject_GetData(data, &fmt, &med))) return hr;
++    if (med.tymed != TYMED_HGLOBAL) { ReleaseStgMedium(&med); return DV_E_TYMED; }
++    group = GlobalLock(med.hGlobal);
++    size = GlobalSize(med.hGlobal);
++    if (size < sizeof(UINT) || group->cItems > (size - sizeof(UINT)) / sizeof(FILEDESCRIPTORW))
++    {
++        GlobalUnlock(med.hGlobal);
++        ReleaseStgMedium(&med);
++        return DV_E_FORMATETC;
++    }
++
++    /* the previous paste has been read by now */
++    if (last_dir[0]) delete_tree(last_dir);
++    GetTempPathW(ARRAY_SIZE(dir), dir);
++    wcscat(dir, L"Clipboard");
++    CreateDirectoryW(dir, NULL);
++    dir_len = wcslen(dir);
++    swprintf(dir + dir_len, ARRAY_SIZE(dir) - dir_len, L"\\%lx-%lx", GetCurrentProcessId(), GetTickCount());
++    if (!CreateDirectoryW(dir, NULL))
++    {
++        GlobalUnlock(med.hGlobal);
++        ReleaseStgMedium(&med);
++        return HRESULT_FROM_WIN32(GetLastError());
++    }
++    lstrcpyW(last_dir, dir);
++    dir_len = wcslen(dir);
++
++    names = HeapAlloc(GetProcessHeap(), 0, (group->cItems * MAX_PATH + 1) * sizeof(WCHAR));
++    for (i = 0; names && i < group->cItems; i++)
++    {
++        const FILEDESCRIPTORW *desc = &group->fgd[i];
++        WCHAR *p;
++
++        /* names are relative; refuse anything that could leave the directory */
++        if (!desc->cFileName[0] || desc->cFileName[0] == '\\' || wcschr(desc->cFileName, ':')
++            || wcsstr(desc->cFileName, L"..\\") || !wcscmp(desc->cFileName, L"..")
++            || (wcslen(desc->cFileName) > 2 && !wcscmp(desc->cFileName + wcslen(desc->cFileName) - 3, L"\\..")))
++        {
++            WARN("skipping %s\n", debugstr_w(desc->cFileName));
++            continue;
++        }
++        swprintf(path, ARRAY_SIZE(path), L"%s\\%s", dir, desc->cFileName);
++        for (p = path + dir_len + 1; *p; p++) if (*p == '/') *p = '\\';
++        create_parent_dirs(path, dir_len);
++        TRACE("%u: %s\n", i, debugstr_w(path));
++
++        if (desc->dwFlags & FD_ATTRIBUTES && desc->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
++            CreateDirectoryW(path, NULL);
++        else if (FAILED(hr = write_virtual_file(data, i, path, desc)))
++            continue;
++
++        /* only top-level items are dropped; the rest are inside them */
++        if (!wcschr(path + dir_len + 1, '\\'))
++        {
++            lstrcpyW(names + len, path);
++            len += wcslen(path) + 1;
++        }
++    }
++    GlobalUnlock(med.hGlobal);
++    ReleaseStgMedium(&med);
++    if (!names) return E_OUTOFMEMORY;
++    if (!len)
++    {
++        HeapFree(GetProcessHeap(), 0, names);
++        return FAILED(hr) ? hr : E_FAIL;
++    }
++    names[len++] = 0;
++
++    hdrop = GlobalAlloc(GMEM_DDESHARE | GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(*drop) + len * sizeof(WCHAR));
++    if (!hdrop)
++    {
++        HeapFree(GetProcessHeap(), 0, names);
++        return E_OUTOFMEMORY;
++    }
++    drop = GlobalLock(hdrop);
++    drop->pFiles = sizeof(*drop);
++    drop->fWide = TRUE;
++    memcpy(drop + 1, names, len * sizeof(WCHAR));
++    GlobalUnlock(hdrop);
++    HeapFree(GetProcessHeap(), 0, names);
++
++    if (!SetClipboardData(CF_HDROP, hdrop))
++    {
++        GlobalFree(hdrop);
++        return CLIPBRD_E_CANT_SET;
++    }
++    return S_OK;
++}
++
+ /***********************************************************************
+  *                   clipbrd_wndproc
+  */
+@@ -2073,6 +2304,8 @@ static LRESULT CALLBACK clipbrd_wndproc(HWND hwnd, UINT message, WPARAM wparam,
+ 
+         if(entry)
+             render_format(clipbrd->src_data, &entry->fmtetc);
++        else if (cf == CF_HDROP && clipbrd->synth_hdrop)
++            render_virtual_files(clipbrd->src_data);
+ 
+         break;
+     }
+-- 
+2.47.3
+

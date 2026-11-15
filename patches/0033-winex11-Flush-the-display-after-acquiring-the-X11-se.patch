@@ -1,0 +1,39 @@
+From a435b734144c7ea04398a2d0ffa38fa2b335decc Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 18:09:44 -0500
+Subject: [PATCH 33/38] winex11: Flush the display after acquiring the X11
+ selection.
+
+acquire_selection() runs when the clipboard thread handles
+WM_CLIPBOARDUPDATE, outside of the event loop. Since the event loop only
+runs (and flushes) when the X connection has input, the new selection
+window and XSetSelectionOwner() stayed in Xlib's buffer until some X
+event arrived on the clipboard connection. X11 clients saw no owner, so
+nothing copied in a Windows application could be pasted; and when the
+buffer was finally flushed, typically by the XFixes notification for
+another client's copy, Wine took the selection back from that client.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/winex11.drv/clipboard.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/dlls/winex11.drv/clipboard.c b/dlls/winex11.drv/clipboard.c
+index ee001563..08969f4e 100644
+--- a/dlls/winex11.drv/clipboard.c
++++ b/dlls/winex11.drv/clipboard.c
+@@ -1922,6 +1922,11 @@ static void acquire_selection( Display *display )
+ 
+     XSetSelectionOwner( display, x11drv_atom(CLIPBOARD), selection_window, CurrentTime );
+     if (use_primary_selection) XSetSelectionOwner( display, XA_PRIMARY, selection_window, CurrentTime );
++    /* This runs from WM_CLIPBOARDUPDATE, not from the event loop.  The event loop only
++     * flushes after reading X events, and the clipboard connection may receive none for a
++     * long time, so the new owner would stay in the request buffer: X11 clients would not
++     * see what Windows applications copied. */
++    XFlush( display );
+     TRACE( "win %lx\n", selection_window );
+ }
+ 
+-- 
+2.47.3
+

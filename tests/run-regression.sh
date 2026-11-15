@@ -50,6 +50,9 @@ check "winex11: leaving fullscreen releases the pointer grab" $exp_fix "$ROOT/te
 DLG=$ROOT/artifacts/dialog-layout
 "$ROOT/tests/static/dialog-layout/build.sh" "$DLG" >/dev/null 2>&1 || { echo "dialog-layout fixture build failed"; exit 1; }
 check "dialog layout: toolbar label and margin, child repaint, nested tab texture, text widths, group box caption" $exp_fix "$ROOT/tests/static/dialog-layout/run.sh" "$W" "$DLG"
+OCB=$ROOT/artifacts/ole-clipboard
+"$ROOT/tests/static/ole-clipboard/build.sh" "$OCB" >/dev/null 2>&1 || { echo "ole-clipboard fixture build failed"; exit 1; }
+check "clipboard: feature probe, predefined format names, OLE <-> X11 text" $exp_fix "$ROOT/tests/static/ole-clipboard/run.sh" "$W" "$OCB"
 check "user32: ordinal 2598 callable"         $exp_fix "$W" "$ORD/ord2598.exe"
 if [[ -f $ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe ]]; then
     check "devobj: conformance test"           pass "$W" "$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe" devobj

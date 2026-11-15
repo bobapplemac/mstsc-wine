@@ -38,14 +38,25 @@ _Last updated: 2026-11-15_
   - Test: `tests/static/dialog-layout` (in the regression suite).
   - Hovering over Show/Hide Options draws the whole frame (patch 0030, ADR-0033). The group box frames leave space around their captions (patch 0031, ADR-0034).
   - Remaining differences (cosmetic, not fixed): Windows 10 button face and tab row drawing details.
+- Clipboard redirection works offline with the genuine mstsc (EXP-048–054, R-026; patches 0032–0038, ADR-0035–0041):
+  - Text in both directions: remote → local was refused by mstsc (stale last error from missing ntdll feature
+    exports), and Wine → X11 was never flushed.
+  - Files in both directions. Remote files are written to the prefix's `%TEMP%\Clipboard` on paste and offered as
+    `text/uri-list` and `x-special/gnome-copied-files`.
+  - Pictures (CF_DIB ↔ `image/bmp`) in both directions.
+  - Test: `tests/launch/test-clipboard.sh` (15 checks against a local cliprdr server); fixture
+    `tests/static/ole-clipboard` (in the regression suite).
+  - Confirmed by the operator on the real Cinnamon desktop against a real Windows host (EXP-055): text and files
+    copied both ways. Pictures and every other scenario not yet checked live.
 
 ## Blockers (need human input)
 1. A domain-joined test host (Kerberos) when available. The current host covers NLA with NTLM.
 2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
-1. Clipboard redirection is not yet checked on a live session (operator suspects copy/paste is missing; not confirmed here).
+1. Clipboard follow-ups: pictures on a live session, T-013 (directory trees), T-014 (two sessions), Dolphin
+   (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 2. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
 3. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-4. Phase 1 features on the live session: clipboard (text and files), keyboard, audio, fullscreen and windowed, DPI.
+4. Phase 1 features on the live session: keyboard, audio, fullscreen and windowed, DPI.
 5. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.

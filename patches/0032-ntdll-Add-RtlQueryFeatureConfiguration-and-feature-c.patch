@@ -1,0 +1,262 @@
+From 408204612e883e37debcc2434ad33b0546ac8f5e Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 18:09:33 -0500
+Subject: [PATCH 32/38] ntdll: Add RtlQueryFeatureConfiguration and feature
+ change notifications.
+
+Windows 10 2004+ code built with WIL looks these up in ntdll on every
+feature check (wil::details::FeatureStateManager). Remote Desktop's
+mstscax.dll does so about 22,000 times per session. Each failed
+GetProcAddress leaves ERROR_PROC_NOT_FOUND as the thread's last error,
+and mstscax's clipboard code later checks GetLastError() after a
+successful GlobalAlloc: it refused every clipboard format list from the
+server, so nothing copied on the remote side could be pasted locally.
+
+Wine has no feature store: report every feature as not configured
+(STATUS_NOT_FOUND), so callers use their compiled-in defaults, as on a
+Windows installation without overrides. The configuration never
+changes, so change callbacks are never called.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/ntdll/ntdll.spec  |  4 +++
+ dlls/ntdll/rtl.c       | 56 ++++++++++++++++++++++++++++++++++++++++++
+ dlls/ntdll/tests/rtl.c | 41 +++++++++++++++++++++++++++++++
+ include/winternl.h     | 37 ++++++++++++++++++++++++++++
+ 4 files changed, 138 insertions(+)
+
+diff --git a/dlls/ntdll/ntdll.spec b/dlls/ntdll/ntdll.spec
+index 46cd1dcc..a3bc780c 100644
+--- a/dlls/ntdll/ntdll.spec
++++ b/dlls/ntdll/ntdll.spec
+@@ -939,6 +939,8 @@
+ @ stdcall RtlQueryDynamicTimeZoneInformation(ptr)
+ @ stdcall RtlQueryEnvironmentVariable_U(ptr ptr ptr)
+ @ stdcall RtlQueryEnvironmentVariable(ptr ptr long ptr long ptr)
++@ stdcall RtlQueryFeatureConfiguration(long long ptr ptr)
++@ stdcall RtlQueryFeatureConfigurationChangeStamp()
+ @ stdcall RtlQueryHeapInformation(long long ptr long ptr)
+ @ stdcall RtlQueryInformationAcl(ptr ptr long long)
+ @ stdcall RtlQueryInformationActivationContext(long long ptr long ptr long ptr)
+@@ -975,6 +977,7 @@
+ @ stdcall RtlRealPredecessor(ptr)
+ @ stdcall RtlRealSuccessor(ptr)
+ @ stub RtlRegisterSecureMemoryCacheCallback
++@ stdcall RtlRegisterFeatureConfigurationChangeNotification(ptr ptr ptr ptr)
+ @ stdcall RtlRegisterWait(ptr ptr ptr ptr long long)
+ @ stdcall RtlReleaseActivationContext(ptr)
+ @ stub RtlReleaseMemoryStream
+@@ -1092,6 +1095,7 @@
+ # @ stub RtlUnlockBootStatusData
+ @ stdcall RtlUnlockHeap(long)
+ # @ stub RtlUnlockMemoryStreamRegion
++@ stdcall RtlUnregisterFeatureConfigurationChangeNotification(ptr)
+ @ stdcall -norelay RtlUnwind(ptr ptr ptr ptr)
+ @ stdcall -arch=!i386 RtlUnwindEx(ptr ptr ptr ptr ptr ptr)
+ @ stdcall RtlUpcaseUnicodeChar(long)
+diff --git a/dlls/ntdll/rtl.c b/dlls/ntdll/rtl.c
+index b63829af..769add99 100644
+--- a/dlls/ntdll/rtl.c
++++ b/dlls/ntdll/rtl.c
+@@ -1679,3 +1679,59 @@ DWORD WINAPI RtlConvertDeviceFamilyInfoToString(DWORD *device_family_size, DWORD
+     memcpy(device_form, unknown_form, form_length);
+     return STATUS_SUCCESS;
+ }
++
++/*********************************************************************
++ *           RtlQueryFeatureConfiguration   (NTDLL.@)
++ *
++ * Feature staging ("velocity") overrides.  Wine has no feature store, so no
++ * feature is configured and every caller uses its compiled-in default, as on
++ * a Windows installation without overrides.
++ */
++NTSTATUS WINAPI RtlQueryFeatureConfiguration( RTL_FEATURE_ID id, RTL_FEATURE_CONFIGURATION_TYPE type,
++                                              RTL_FEATURE_CHANGE_STAMP *stamp, RTL_FEATURE_CONFIGURATION *config )
++{
++    TRACE( "%#lx, %u, %p, %p\n", id, type, stamp, config );
++
++    if (type >= RtlFeatureConfigurationCount || !config) return STATUS_INVALID_PARAMETER;
++    if (stamp) *stamp = RtlQueryFeatureConfigurationChangeStamp();
++    return STATUS_NOT_FOUND;
++}
++
++/*********************************************************************
++ *           RtlQueryFeatureConfigurationChangeStamp   (NTDLL.@)
++ */
++RTL_FEATURE_CHANGE_STAMP WINAPI RtlQueryFeatureConfigurationChangeStamp(void)
++{
++    return user_shared_data->FeatureConfigurationChangeStamp.LowPart
++           | ((ULONGLONG)user_shared_data->FeatureConfigurationChangeStamp.High1Time << 32);
++}
++
++/*********************************************************************
++ *           RtlRegisterFeatureConfigurationChangeNotification   (NTDLL.@)
++ *
++ * The configuration never changes, so the callback is never called.
++ */
++NTSTATUS WINAPI RtlRegisterFeatureConfigurationChangeNotification( PRTL_FEATURE_CONFIGURATION_CHANGE_CALLBACK callback,
++                                                                   void *context, RTL_FEATURE_CHANGE_STAMP *stamp,
++                                                                   RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION *handle )
++{
++    static int registration;
++
++    TRACE( "%p, %p, %p, %p\n", callback, context, stamp, handle );
++
++    if (!callback || !handle) return STATUS_INVALID_PARAMETER;
++    if (stamp) *stamp = RtlQueryFeatureConfigurationChangeStamp();
++    *handle = &registration;
++    return STATUS_SUCCESS;
++}
++
++/*********************************************************************
++ *           RtlUnregisterFeatureConfigurationChangeNotification   (NTDLL.@)
++ */
++NTSTATUS WINAPI RtlUnregisterFeatureConfigurationChangeNotification( RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION handle )
++{
++    TRACE( "%p\n", handle );
++
++    if (!handle) return STATUS_INVALID_PARAMETER;
++    return STATUS_SUCCESS;
++}
+diff --git a/dlls/ntdll/tests/rtl.c b/dlls/ntdll/tests/rtl.c
+index f5db5cdc..0f905ae8 100644
+--- a/dlls/ntdll/tests/rtl.c
++++ b/dlls/ntdll/tests/rtl.c
+@@ -142,6 +142,9 @@ static NTSTATUS  (WINAPI *pRtlResetNtUserPfn)(void);
+ static PRTL_SPLAY_LINKS (WINAPI *pRtlSubtreePredecessor)(PRTL_SPLAY_LINKS);
+ static PRTL_SPLAY_LINKS (WINAPI *pRtlSubtreeSuccessor)(PRTL_SPLAY_LINKS);
+ static PRTL_SPLAY_LINKS (WINAPI *pRtlSplay)(PRTL_SPLAY_LINKS);
++static NTSTATUS  (WINAPI *pRtlQueryFeatureConfiguration)(RTL_FEATURE_ID,RTL_FEATURE_CONFIGURATION_TYPE,RTL_FEATURE_CHANGE_STAMP*,RTL_FEATURE_CONFIGURATION*);
++static NTSTATUS  (WINAPI *pRtlRegisterFeatureConfigurationChangeNotification)(PRTL_FEATURE_CONFIGURATION_CHANGE_CALLBACK,void*,RTL_FEATURE_CHANGE_STAMP*,RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION*);
++static NTSTATUS  (WINAPI *pRtlUnregisterFeatureConfigurationChangeNotification)(RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION);
+ 
+ static HMODULE hkernel32 = 0;
+ static BOOL      (WINAPI *pIsWow64Process)(HANDLE, PBOOL);
+@@ -210,6 +213,9 @@ static void InitFunctionPtrs(void)
+         pRtlSubtreePredecessor = (void *)GetProcAddress(hntdll, "RtlSubtreePredecessor");
+         pRtlSubtreeSuccessor = (void *)GetProcAddress(hntdll, "RtlSubtreeSuccessor");
+         pRtlSplay = (void *)GetProcAddress(hntdll, "RtlSplay");
++        pRtlQueryFeatureConfiguration = (void *)GetProcAddress(hntdll, "RtlQueryFeatureConfiguration");
++        pRtlRegisterFeatureConfigurationChangeNotification = (void *)GetProcAddress(hntdll, "RtlRegisterFeatureConfigurationChangeNotification");
++        pRtlUnregisterFeatureConfigurationChangeNotification = (void *)GetProcAddress(hntdll, "RtlUnregisterFeatureConfigurationChangeNotification");
+     }
+     hkernel32 = LoadLibraryA("kernel32.dll");
+     ok(hkernel32 != 0, "LoadLibrary failed\n");
+@@ -5476,10 +5482,45 @@ static void test_RtlDeriveCapabilitySidsFromName(void)
+     free( group_sid );
+ }
+ 
++static void WINAPI feature_change_callback(void *context)
++{
++    ok(0, "unexpected feature configuration change\n");
++}
++
++static void test_RtlQueryFeatureConfiguration(void)
++{
++    RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION reg = NULL;
++    RTL_FEATURE_CONFIGURATION config;
++    RTL_FEATURE_CHANGE_STAMP stamp;
++    NTSTATUS status;
++
++    if (!pRtlQueryFeatureConfiguration)
++    {
++        win_skip("RtlQueryFeatureConfiguration is not available\n");
++        return;
++    }
++
++    /* an id nobody configures: callers fall back to their built-in default */
++    stamp = 0xdeadbeef;
++    status = pRtlQueryFeatureConfiguration(0x7fffff01, RtlFeatureConfigurationRuntime, &stamp, &config);
++    ok(status == STATUS_NOT_FOUND, "got %#lx\n", status);
++    ok(stamp != 0xdeadbeef, "change stamp not set\n");
++
++    status = pRtlQueryFeatureConfiguration(0x7fffff01, RtlFeatureConfigurationBoot, NULL, &config);
++    ok(status == STATUS_NOT_FOUND, "got %#lx\n", status);
++
++    status = pRtlRegisterFeatureConfigurationChangeNotification(feature_change_callback, NULL, NULL, &reg);
++    ok(status == STATUS_SUCCESS, "got %#lx\n", status);
++    ok(reg != NULL, "no registration\n");
++    status = pRtlUnregisterFeatureConfigurationChangeNotification(reg);
++    ok(status == STATUS_SUCCESS, "got %#lx\n", status);
++}
++
+ START_TEST(rtl)
+ {
+     InitFunctionPtrs();
+ 
++    test_RtlQueryFeatureConfiguration();
+     test_RtlQueryProcessDebugInformation();
+     test_RtlCompareMemory();
+     test_RtlCompareMemoryUlong();
+diff --git a/include/winternl.h b/include/winternl.h
+index 80c295f0..a1648d87 100644
+--- a/include/winternl.h
++++ b/include/winternl.h
+@@ -2821,6 +2821,39 @@ typedef struct _PROCESS_STACK_ALLOCATION_INFORMATION_EX
+     PROCESS_STACK_ALLOCATION_INFORMATION AllocInfo;
+ } PROCESS_STACK_ALLOCATION_INFORMATION_EX, *PPROCESS_STACK_ALLOCATION_INFORMATION_EX;
+ 
++typedef ULONG RTL_FEATURE_ID;
++typedef ULONGLONG RTL_FEATURE_CHANGE_STAMP, *PRTL_FEATURE_CHANGE_STAMP;
++typedef void *RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION, **PRTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION;
++
++typedef enum _RTL_FEATURE_CONFIGURATION_TYPE
++{
++    RtlFeatureConfigurationBoot,
++    RtlFeatureConfigurationRuntime,
++    RtlFeatureConfigurationCount
++} RTL_FEATURE_CONFIGURATION_TYPE;
++
++typedef struct _RTL_FEATURE_CONFIGURATION
++{
++    RTL_FEATURE_ID FeatureId;
++    union
++    {
++        ULONG Flags;
++        struct
++        {
++            ULONG Priority : 4;
++            ULONG EnabledState : 2;
++            ULONG IsWexpConfiguration : 1;
++            ULONG HasSubscriptions : 1;
++            ULONG Variant : 6;
++            ULONG VariantPayloadKind : 2;
++            ULONG Reserved : 16;
++        } DUMMYSTRUCTNAME;
++    } DUMMYUNIONNAME;
++    ULONG VariantPayload;
++} RTL_FEATURE_CONFIGURATION, *PRTL_FEATURE_CONFIGURATION;
++
++typedef void (NTAPI *PRTL_FEATURE_CONFIGURATION_CHANGE_CALLBACK)(void *context);
++
+ typedef NTSTATUS (NTAPI RTL_HEAP_COMMIT_ROUTINE)(PVOID base, PVOID *address, PSIZE_T size);
+ typedef RTL_HEAP_COMMIT_ROUTINE *PRTL_HEAP_COMMIT_ROUTINE;
+ 
+@@ -5134,6 +5167,8 @@ NTSYSAPI NTSTATUS  WINAPI RtlQueryAtomInAtomTable(RTL_ATOM_TABLE,RTL_ATOM,ULONG*
+ NTSYSAPI NTSTATUS  WINAPI RtlQueryDynamicTimeZoneInformation(RTL_DYNAMIC_TIME_ZONE_INFORMATION*);
+ NTSYSAPI NTSTATUS  WINAPI RtlQueryEnvironmentVariable(WCHAR*,const WCHAR*,SIZE_T,WCHAR*,SIZE_T,SIZE_T*);
+ NTSYSAPI NTSTATUS  WINAPI RtlQueryEnvironmentVariable_U(PWSTR,PUNICODE_STRING,PUNICODE_STRING);
++NTSYSAPI NTSTATUS  WINAPI RtlQueryFeatureConfiguration(RTL_FEATURE_ID,RTL_FEATURE_CONFIGURATION_TYPE,RTL_FEATURE_CHANGE_STAMP*,RTL_FEATURE_CONFIGURATION*);
++NTSYSAPI RTL_FEATURE_CHANGE_STAMP WINAPI RtlQueryFeatureConfigurationChangeStamp(void);
+ NTSYSAPI NTSTATUS  WINAPI RtlQueryHeapInformation(HANDLE,HEAP_INFORMATION_CLASS,PVOID,SIZE_T,PSIZE_T);
+ NTSYSAPI NTSTATUS  WINAPI RtlQueryInformationAcl(PACL,LPVOID,DWORD,ACL_INFORMATION_CLASS);
+ NTSYSAPI NTSTATUS  WINAPI RtlQueryInformationActivationContext(ULONG,struct _ACTIVATION_CONTEXT *,PVOID,ULONG,PVOID,SIZE_T,SIZE_T*);
+@@ -5153,6 +5188,7 @@ NTSYSAPI ULONG     WINAPI RtlRandomEx(PULONG);
+ NTSYSAPI void      WINAPI RtlRbInsertNodeEx(RTL_RB_TREE*,RTL_BALANCED_NODE*,BOOLEAN,RTL_BALANCED_NODE*);
+ NTSYSAPI void      WINAPI RtlRbRemoveNode(RTL_RB_TREE*,RTL_BALANCED_NODE*);
+ NTSYSAPI PVOID     WINAPI RtlReAllocateHeap(HANDLE,ULONG,PVOID,SIZE_T) __WINE_ALLOC_SIZE(4) __WINE_DEALLOC(RtlFreeHeap,3);
++NTSYSAPI NTSTATUS  WINAPI RtlRegisterFeatureConfigurationChangeNotification(PRTL_FEATURE_CONFIGURATION_CHANGE_CALLBACK,void*,RTL_FEATURE_CHANGE_STAMP*,RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION*);
+ NTSYSAPI NTSTATUS  WINAPI RtlRegisterWait(PHANDLE,HANDLE,RTL_WAITORTIMERCALLBACKFUNC,PVOID,ULONG,ULONG);
+ NTSYSAPI void      WINAPI RtlReleaseActivationContext(struct _ACTIVATION_CONTEXT *);
+ NTSYSAPI void      WINAPI RtlReleasePath(PWSTR);
+@@ -5222,6 +5258,7 @@ NTSYSAPI NTSTATUS  WINAPI RtlUnicodeToMultiByteSize(PULONG,PCWSTR,ULONG);
+ NTSYSAPI NTSTATUS  WINAPI RtlUnicodeToOemN(LPSTR,DWORD,LPDWORD,LPCWSTR,DWORD);
+ NTSYSAPI NTSTATUS  WINAPI RtlUnicodeToUTF8N(LPSTR,DWORD,LPDWORD,LPCWSTR,DWORD);
+ NTSYSAPI ULONG     WINAPI RtlUniform(PULONG);
++NTSYSAPI NTSTATUS  WINAPI RtlUnregisterFeatureConfigurationChangeNotification(RTL_FEATURE_CONFIGURATION_CHANGE_REGISTRATION);
+ NTSYSAPI BOOLEAN   WINAPI RtlUnlockHeap(HANDLE);
+ NTSYSAPI WCHAR     WINAPI RtlUpcaseUnicodeChar(WCHAR);
+ NTSYSAPI NTSTATUS  WINAPI RtlUpcaseUnicodeStringToAnsiString(STRING*,const UNICODE_STRING*,BOOLEAN);
+-- 
+2.47.3
+

@@ -29,3 +29,10 @@
 0029-uxtheme-Give-nested-ETDT_ENABLE-dialogs-the-texture-.patch
 0030-comctl32-toolbar-Do-not-add-a-top-margin-to-non-flat.patch
 0031-comctl32-button-Leave-space-between-a-themed-group-b.patch
+0032-ntdll-Add-RtlQueryFeatureConfiguration-and-feature-c.patch
+0033-winex11-Flush-the-display-after-acquiring-the-X11-se.patch
+0034-user32-GetClipboardFormatNameW-fails-for-predefined-.patch
+0035-ole32-Report-HGLOBAL-storage-for-handle-based-predef.patch
+0036-ole32-Offer-CF_HDROP-for-virtual-files-on-the-clipbo.patch
+0037-winex11-Export-CF_HDROP-as-x-special-gnome-copied-fi.patch
+0038-winex11-Do-not-escape-path-separators-in-exported-fi.patch
