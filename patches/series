@@ -26,3 +26,4 @@
 0026-comctl32-toolbar-Start-list-button-text-right-after-.patch
 0027-server-Invalidate-a-child-moved-into-an-invalid-part.patch
 0028-win32u-Use-the-v35-TrueType-interpreter-for-Windows-.patch
+0029-uxtheme-Give-nested-ETDT_ENABLE-dialogs-the-texture-.patch

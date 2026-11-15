@@ -315,12 +315,15 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
 - Animation (V, EXP-043): **Show Options** grows the window from a worker thread in about
   six steps and moves the bottom row in `WM_WINDOWPOSCHANGED` after each step.
 - Theme (V/I, EXP-045):
-  - mstsc loads `uxtheme.dll` at run time and calls `EnableThemeDialogTexture(hwnd,
-    ETDT_ENABLE)` on the main dialog, the collapsed credentials panel and the General page.
-  - It never calls it on the credentials sub-dialog inside the General page. That
-    sub-dialog is grey in Wine and white on Windows.
-  - How Windows makes it white is not established (H: a texture inherited from a textured
-    `DS_CONTROL` parent, or `ETDT_ENABLE` meaning more than Wine implements).
+  - mstsc loads `uxtheme.dll` at run time and calls `EnableThemeDialogTexture(page,
+    ETDT_ENABLETAB)` on the General page only (V, relay trace).
+  - comctl32 calls `EnableThemeDialogTexture(parent, ETDT_ENABLE)` for every themed button
+    and static, so every dialog holding controls gets `ETDT_ENABLE`. That includes the
+    "Credentials" panel nested in the General page (V).
+  - Windows draws that panel with the page's white tab texture. So native uxtheme gives an
+    `ETDT_ENABLE` child dialog the texture of its textured parent (I, inferred from mstsc
+    behaving the same on both systems). Implemented in patch 0029 (ADR-0032).
+    `tests/static/dialog-layout/nested.exe` can confirm the rule on Windows.
 - Other small differences (I): Windows 10 button faces are drawn 1 px inside the button
   rectangle on each side; the Logon/Connection settings group boxes leave a gap around their
   captions; the tab row is a few pixels taller. These are theme drawing, not layout.

@@ -49,7 +49,7 @@ FSC=$ROOT/artifacts/fullscreen-clip
 check "winex11: leaving fullscreen releases the pointer grab" $exp_fix "$ROOT/tests/static/fullscreen-clip/run.sh" "$W" "$FSC"
 DLG=$ROOT/artifacts/dialog-layout
 "$ROOT/tests/static/dialog-layout/build.sh" "$DLG" >/dev/null 2>&1 || { echo "dialog-layout fixture build failed"; exit 1; }
-check "dialog layout: toolbar label, child repaint on expand, hinted text widths" $exp_fix "$ROOT/tests/static/dialog-layout/run.sh" "$W" "$DLG"
+check "dialog layout: toolbar label, child repaint on expand, nested tab texture, hinted text widths" $exp_fix "$ROOT/tests/static/dialog-layout/run.sh" "$W" "$DLG"
 check "user32: ordinal 2598 callable"         $exp_fix "$W" "$ORD/ord2598.exe"
 if [[ -f $ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe ]]; then
     check "devobj: conformance test"           pass "$W" "$ROOT/build/$(basename "$RT" | sed 's/^install-//')/dlls/devobj/tests/x86_64-windows/devobj_test.exe" devobj

@@ -1,0 +1,113 @@
+From 6b03ac8f90bb1e1bd7acf6a43eae2673a2db1b7b Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 15:10:03 -0500
+Subject: [PATCH 29/29] uxtheme: Give nested ETDT_ENABLE dialogs the texture of
+ a textured parent.
+
+comctl32 marks the parent of every themed button and static with
+EnableThemeDialogTexture(ETDT_ENABLE). A child dialog with only that
+flag, nested in a property page that uses ETDT_ENABLETAB, kept the plain
+dialog colour, while Windows shows the page's tab texture there: the
+"Credentials" panel inside mstsc's General tab is white on Windows and
+was a grey box in Wine.
+
+Use the texture brush of the nearest textured ancestor dialog for such
+child dialogs, aligned to that ancestor, for both WM_ERASEBKGND and the
+WM_CTLCOLOR* brushes. Top-level dialogs are unchanged.
+---
+ dlls/uxtheme/dialog.c | 37 +++++++++++++++++++++++++++++++------
+ 1 file changed, 31 insertions(+), 6 deletions(-)
+
+diff --git a/dlls/uxtheme/dialog.c b/dlls/uxtheme/dialog.c
+index a27382af..185377a0 100644
+--- a/dlls/uxtheme/dialog.c
++++ b/dlls/uxtheme/dialog.c
+@@ -31,7 +31,7 @@
+ extern ATOM atDialogThemeEnabled;
+ static const WCHAR wine_dialog_brush[] = L"wine_dialog_brush";
+ 
+-static HBRUSH get_dialog_background_brush(HWND hwnd, BOOL create)
++static HBRUSH get_own_dialog_background_brush(HWND hwnd, BOOL create)
+ {
+     HBITMAP bitmap, old_bitmap;
+     HDC hdc, hdc_screen;
+@@ -89,6 +89,28 @@ static HBRUSH get_dialog_background_brush(HWND hwnd, BOOL create)
+     return brush;
+ }
+ 
++/* Returns the texture brush for a dialog and the window the brush is aligned to.  A child
++ * dialog that only has ETDT_ENABLE (comctl32 sets it on the parent of every themed button and
++ * static) shows the texture of a textured dialog it is nested in, the way the "Credentials"
++ * panel inside mstsc's General tab is white on Windows. */
++static HBRUSH get_dialog_background_brush(HWND hwnd, BOOL create, HWND *origin)
++{
++    HBRUSH brush;
++    DWORD flag;
++    HWND parent;
++
++    *origin = hwnd;
++    if ((brush = get_own_dialog_background_brush(hwnd, create)))
++        return brush;
++
++    flag = HandleToUlong(GetPropW(hwnd, (LPCWSTR)MAKEINTATOM(atDialogThemeEnabled)));
++    if (flag != ETDT_ENABLE || !(GetWindowLongW(hwnd, GWL_STYLE) & WS_CHILD))
++        return NULL;
++    if (!(parent = GetParent(hwnd)) || parent == GetDesktopWindow())
++        return NULL;
++    return get_dialog_background_brush(parent, create, origin);
++}
++
+ static void destroy_dialog_brush(HWND hwnd)
+ {
+     LOGBRUSH logbrush;
+@@ -106,7 +128,8 @@ static void destroy_dialog_brush(HWND hwnd)
+ 
+ LRESULT WINAPI UXTHEME_DefDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, BOOL unicode)
+ {
+-    POINT org, old_org;
++    POINT org, old_org, offset;
++    HWND origin;
+     WNDPROC dlgproc;
+     HBRUSH brush;
+     LRESULT lr;
+@@ -134,7 +157,7 @@ LRESULT WINAPI UXTHEME_DefDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, BOO
+         if (lr || !IsWindow(hwnd))
+             return GetWindowLongPtrW(hwnd, DWLP_MSGRESULT);
+ 
+-        brush = get_dialog_background_brush(hwnd, TRUE);
++        brush = get_dialog_background_brush(hwnd, TRUE, &origin);
+         if (!brush)
+         {
+             /* Copied from DEFDLG_Proc() */
+@@ -157,7 +180,9 @@ LRESULT WINAPI UXTHEME_DefDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, BOO
+          * exists on XP and explains why vista+ don't use gradient tab body background anymore */
+         hdc = (HDC)wp;
+         GetViewportOrgEx(hdc, &org);
+-        SetBrushOrgEx(hdc, org.x, org.y, &old_org);
++        offset.x = offset.y = 0;
++        if (origin != hwnd) MapWindowPoints(hwnd, origin, &offset, 1);
++        SetBrushOrgEx(hdc, org.x - offset.x, org.y - offset.y, &old_org);
+         GetClientRect(hwnd, &rect);
+         FillRect(hdc, &rect, brush);
+         SetBrushOrgEx(hdc, old_org.x, old_org.y, NULL);
+@@ -173,7 +198,7 @@ LRESULT WINAPI UXTHEME_DefDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, BOO
+         if (lr || !IsWindow(hwnd))
+             return lr;
+ 
+-        brush = get_dialog_background_brush(hwnd, FALSE);
++        brush = get_dialog_background_brush(hwnd, FALSE, &origin);
+         if (!brush)
+             return DefWindowProcW(hwnd, msg, wp, lp);
+ 
+@@ -183,7 +208,7 @@ LRESULT WINAPI UXTHEME_DefDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, BOO
+ 
+         org.x = 0;
+         org.y = 0;
+-        MapWindowPoints((HWND)lp, hwnd, &org, 1);
++        MapWindowPoints((HWND)lp, origin, &org, 1);
+         SetBrushOrgEx(hdc, -org.x, -org.y, NULL);
+         return (LRESULT)brush;
+     }
+-- 
+2.47.3
+
