@@ -19,3 +19,7 @@
 0019-secur32-Leave-the-server-s-NTSTATUS-as-the-last-stat.patch
 0020-credui-Wrap-long-messages-in-the-credential-dialog.patch
 0021-credui-Do-not-prefill-the-password-when-asking-again.patch
+0022-kerberos-Use-Windows-token-layout-in-EncryptMessage-.patch
+0023-kerberos-Use-the-realm-of-a-user-principal-name-in-u.patch
+0024-kerberos-Give-target-names-without-a-realm-the-refer.patch
+0025-kerberos-Keep-tickets-for-explicit-credentials-in-a-.patch

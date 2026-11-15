@@ -1,0 +1,61 @@
+From 9517148b504a82495e14694eafc2f58d43ed6c81 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 14:08:49 -0500
+Subject: [PATCH] kerberos: Use the realm of a user principal name, in upper
+ case.
+
+A user name like "user@dns.domain" with no domain gave the principal
+"user@dns.domain@". Split it at the last '@', and upper-case the realm as Windows does.
+---
+ dlls/kerberos/krb5_ap.c | 25 ++++++++++++++++++++++---
+ 1 file changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/kerberos/krb5_ap.c b/dlls/kerberos/krb5_ap.c
+index 27c91b26..4de82736 100644
+--- a/dlls/kerberos/krb5_ap.c
++++ b/dlls/kerberos/krb5_ap.c
+@@ -377,10 +377,27 @@ static char *get_str_unixcp( const UNICODE_STRING *str )
+     return ret;
+ }
+ 
++/* Kerberos principal for a user name and domain: "user@REALM". The realm is the domain in
++ * upper case, as Windows uses it; a user principal name ("user@dns.domain") with no domain
++ * keeps its user part and gets its realm part upper-cased. */
+ static char *get_username_unixcp( const WCHAR *user, ULONG user_len, const WCHAR *domain, ULONG domain_len )
+ {
+     int len_user, len_domain;
+-    char *ret;
++    char *ret, *realm;
++
++    if (!domain_len)
++    {
++        const WCHAR *at = NULL;
++        ULONG i;
++
++        for (i = 0; i < user_len; i++) if (user[i] == '@') at = user + i;
++        if (at)
++        {
++            domain = at + 1;
++            domain_len = user_len - (domain - user);
++            user_len = at - user;
++        }
++    }
+ 
+     len_user = WideCharToMultiByte( CP_UNIXCP, 0, user, user_len, NULL, 0, NULL, NULL );
+     len_domain = WideCharToMultiByte( CP_UNIXCP, 0, domain, domain_len, NULL, 0, NULL, NULL );
+@@ -388,8 +405,10 @@ static char *get_username_unixcp( const WCHAR *user, ULONG user_len, const WCHAR
+ 
+     WideCharToMultiByte( CP_UNIXCP, 0, user, user_len, ret, len_user, NULL, NULL );
+     ret[len_user] = '@';
+-    WideCharToMultiByte( CP_UNIXCP, 0, domain, domain_len, ret + len_user + 1, len_domain, NULL, NULL );
+-    ret[len_user + len_domain + 1] = 0;
++    realm = ret + len_user + 1;
++    WideCharToMultiByte( CP_UNIXCP, 0, domain, domain_len, realm, len_domain, NULL, NULL );
++    realm[len_domain] = 0;
++    for (; *realm; realm++) if (*realm >= 'a' && *realm <= 'z') *realm -= 'a' - 'A';
+     return ret;
+ }
+ 
+-- 
+2.47.3
+

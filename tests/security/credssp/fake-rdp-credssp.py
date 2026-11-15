@@ -12,6 +12,12 @@ FILE holds one "DOMAIN:USER:PASSWORD" line. Only test accounts, never real ones.
 Logs the delegated user name and whether the password matched FILE, never the password.
 """
 import os, select, socket, ssl, sys, time
+import importlib.util, sys, types
+# Kerberos (KRB5_KTNAME = server keytab): pyspnego loads GSSAPI only together with the
+# python "krb5" module, which it needs for client passwords, not for accepting. Debian
+# has no package for it, so give the acceptor a stand-in when it is missing.
+if os.environ.get("KRB5_KTNAME") and importlib.util.find_spec("krb5") is None:
+    sys.modules["krb5"] = types.ModuleType("krb5")
 import logging, spnego, spnego.tls
 if os.environ.get("FAKE_RDP_DEBUG"): logging.basicConfig(level=logging.DEBUG)
 
@@ -113,8 +119,9 @@ while time.time() < deadline:
         if not ctx.complete: c.close(); continue
         cred = ctx.get_extra_info("client_credential")
         user = getattr(cred, "username", None); pw = getattr(cred, "password", None)
-        log(f"CREDSSP COMPLETE: version {ctx.get_extra_info('protocol_version')}, delegated user {user!r}, "
-            f"password {'matches' if pw == expected[2] else 'DOES NOT MATCH'}")
+        mech = getattr(getattr(ctx, "_auth_context", None), "negotiated_protocol", None)
+        log(f"CREDSSP COMPLETE: version {ctx.get_extra_info('protocol_version')}, mechanism {mech}, "
+            f"delegated user {user!r}, password {'matches' if pw == expected[2] else 'DOES NOT MATCH'}")
         plain = ctx.unwrap(leftover).data if leftover else b""
         if not plain:
             data = recv_burst(c, max(1, deadline - time.time()))

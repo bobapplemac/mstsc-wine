@@ -272,3 +272,26 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
 - On Windows the password field is empty after a failed logon (V, operator). Windows'
   behaviour for an input buffer without an error is not checked (H: it fills the fields);
   Wine keeps filling both there.
+
+## R-024 Kerberos for NLA without joining the domain (V/I)
+- What it needs (V, EXP-041):
+  - A KDC the client can reach. MIT finds it through DNS SRV records
+    (`_kerberos._tcp.<dns.domain>`), so no `krb5.conf` is required.
+  - The realm in the user name: a user principal name (`user@dns.domain`) or
+    `dns.domain\user`.
+  - The server addressed by its DNS name; an IP gives an SPN no KDC knows, so it falls
+    back to NTLM.
+  - Clocks within 5 minutes of the KDC.
+- `DOMAIN\user` with the NetBIOS name gives the realm `DOMAIN` and falls back to NTLM (I).
+  Windows maps NetBIOS names with DsGetDcName.
+- A wrong password: the TGT request fails, Negotiate falls back to NTLM, and the server
+  rejects that with `STATUS_LOGON_FAILURE`, so mstsc re-prompts (V, offline). That is two
+  failed logons per attempt toward lockout (H: Windows may not fall back here).
+- With Kerberos, mstsc shows no certificate warning (V, operator). Mutual Kerberos
+  authentication proves the server's identity, so mstsc does not need to trust its TLS
+  certificate. Windows clients behave the same way.
+- pyspnego accepts Kerberos with `python3-gssapi` alone. It refuses to load GSSAPI without
+  the `krb5` module, which it needs only for client passwords and which Debian does not
+  package. The test server installs a stand-in module.
+- The KDC for tests is Debian's MIT krb5-kdc unpacked under `.deps` (`tools/fetch-krb5kdc.sh`).
+  It runs as the user on a high port, with no system configuration.

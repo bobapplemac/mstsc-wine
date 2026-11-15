@@ -1,0 +1,169 @@
+From ba70027e63778dc2ddbe91351630580d2f0503df Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 14:08:49 -0500
+Subject: [PATCH] kerberos: Use Windows' token layout in EncryptMessage and
+ DecryptMessage.
+
+With a token and a data buffer, Windows puts the wrap token header, with the trailer
+rotated into it, in the token buffer and encrypts the data in place, so that token + data
+is a valid wrap token for the peer. CredSSP sends pubKeyAuth that way. Produce this layout
+with gss_wrap_iov for enctypes without padding, unwrap token + data in that order, and
+report the real header length as the security trailer size.
+---
+ dlls/kerberos/unixlib.c | 88 ++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 83 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/kerberos/unixlib.c b/dlls/kerberos/unixlib.c
+index 46665bd5..08a63789 100644
+--- a/dlls/kerberos/unixlib.c
++++ b/dlls/kerberos/unixlib.c
+@@ -414,6 +414,7 @@ MAKE_FUNCPTR( gss_unwrap_iov );
+ MAKE_FUNCPTR( gss_verify_mic );
+ MAKE_FUNCPTR( gss_wrap );
+ MAKE_FUNCPTR( gss_wrap_iov );
++MAKE_FUNCPTR( gss_wrap_iov_length );
+ #undef MAKE_FUNCPTR
+ 
+ static BOOL load_gssapi_krb5(void)
+@@ -450,6 +451,7 @@ static BOOL load_gssapi_krb5(void)
+     LOAD_FUNCPTR( gss_verify_mic )
+     LOAD_FUNCPTR( gss_wrap )
+     LOAD_FUNCPTR( gss_wrap_iov )
++    LOAD_FUNCPTR( gss_wrap_iov_length )
+ #undef LOAD_FUNCPTR
+     return TRUE;
+ 
+@@ -817,6 +819,24 @@ static NTSTATUS make_signature( void *args )
+ #define KERBEROS_MAX_SIGNATURE_DCE    28
+ #define KERBEROS_SECURITY_TRAILER_DCE 76
+ 
++/* Length of the token EncryptMessage produces for a non-DCE context: the wrap token header
++ * with the trailer rotated into it, as Windows lays it out (0 if unknown). */
++static ULONG get_wrap_header_length( gss_ctx_id_t ctx )
++{
++    gss_iov_buffer_desc iov[3];
++    OM_uint32 ret, minor_status;
++    int conf_state;
++
++    if (ctx == GSS_C_NO_CONTEXT) return 0;
++    memset( iov, 0, sizeof(iov) );
++    iov[0].type = GSS_IOV_BUFFER_TYPE_HEADER;
++    iov[1].type = GSS_IOV_BUFFER_TYPE_DATA;
++    iov[2].type = GSS_IOV_BUFFER_TYPE_PADDING;
++    ret = pgss_wrap_iov_length( &minor_status, ctx, 1, GSS_C_QOP_DEFAULT, &conf_state, iov, 3 );
++    if (GSS_ERROR( ret ) || iov[2].buffer.length) return 0;
++    return iov[0].buffer.length;
++}
++
+ static NTSTATUS get_session_key( gss_ctx_id_t ctx, SecPkgContext_SessionKey *key )
+ {
+     gss_OID_desc GSS_C_INQ_SSPI_SESSION_KEY =
+@@ -874,7 +894,8 @@ static NTSTATUS query_context_attributes( void *args )
+         else
+         {
+             size_max_signature = KERBEROS_MAX_SIGNATURE;
+-            size_security_trailer = KERBEROS_SECURITY_TRAILER;
++            if (!(size_security_trailer = get_wrap_header_length( ctx )))
++                size_security_trailer = KERBEROS_SECURITY_TRAILER;
+         }
+         sizes->cbMaxToken        = KERBEROS_MAX_BUF;
+         sizes->cbMaxSignature    = size_max_signature;
+@@ -935,8 +956,51 @@ static NTSTATUS seal_message_vector( gss_ctx_id_t ctx, const struct seal_message
+     return status_gss_to_sspi( ret );
+ }
+ 
++/* Windows' layout for a token and a data buffer: the token holds the wrap token header with
++ * the trailer rotated into it (RRC), the data is encrypted in place, and token + data is a
++ * valid wrap token for the peer (MS-KILE 3.4.5.4, e.g. CredSSP's pubKeyAuth). Needs an
++ * enctype without padding (AES); returns STATUS_NOT_SUPPORTED otherwise. */
++static NTSTATUS seal_message_windows( gss_ctx_id_t ctx, const struct seal_message_params *params, int conf_flag )
++{
++    gss_iov_buffer_desc iov[3];
++    OM_uint32 ret, minor_status;
++    int conf_state;
++
++    iov[0].type          = GSS_IOV_BUFFER_TYPE_HEADER | GSS_IOV_BUFFER_FLAG_ALLOCATE;
++    iov[0].buffer.length = 0;
++    iov[0].buffer.value  = NULL;
++
++    iov[1].type          = GSS_IOV_BUFFER_TYPE_DATA;
++    iov[1].buffer.length = params->data_length;
++    iov[1].buffer.value  = params->data;
++
++    iov[2].type          = GSS_IOV_BUFFER_TYPE_PADDING;
++    iov[2].buffer.length = 0;
++    iov[2].buffer.value  = NULL;
++
++    ret = pgss_wrap_iov_length( &minor_status, ctx, conf_flag, GSS_C_QOP_DEFAULT, &conf_state, iov, 3 );
++    if (GSS_ERROR( ret ) || iov[2].buffer.length) return STATUS_NOT_SUPPORTED;
++    if (*params->token_length < iov[0].buffer.length)
++    {
++        TRACE( "buffer too small %lu > %u\n", (SIZE_T)iov[0].buffer.length, *params->token_length );
++        return SEC_E_BUFFER_TOO_SMALL;
++    }
++
++    ret = pgss_wrap_iov( &minor_status, ctx, conf_flag, GSS_C_QOP_DEFAULT, &conf_state, iov, 2 );
++    TRACE( "gss_wrap_iov returned %#x minor status %#x\n", ret, minor_status );
++    if (GSS_ERROR( ret )) trace_gss_status( ret, minor_status );
++    if (ret == GSS_S_COMPLETE)
++    {
++        memcpy( params->token, iov[0].buffer.value, iov[0].buffer.length );
++        *params->token_length = iov[0].buffer.length;
++    }
++    pgss_release_iov_buffer( &minor_status, iov, 2 );
++    return status_gss_to_sspi( ret );
++}
++
+ static NTSTATUS seal_message_no_vector( gss_ctx_id_t ctx, const struct seal_message_params *params )
+ {
++    NTSTATUS status;
+     gss_buffer_desc input, output;
+     OM_uint32 ret, minor_status;
+     int conf_flag, conf_state;
+@@ -951,6 +1015,8 @@ static NTSTATUS seal_message_no_vector( gss_ctx_id_t ctx, const struct seal_mess
+         return SEC_E_UNSUPPORTED_FUNCTION;
+     }
+ 
++    if ((status = seal_message_windows( ctx, params, conf_flag )) != STATUS_NOT_SUPPORTED) return status;
++
+     input.length = params->data_length;
+     input.value  = params->data;
+ 
+@@ -1057,10 +1123,12 @@ static NTSTATUS unseal_message_no_vector( gss_ctx_id_t ctx, const struct unseal_
+     }
+     else
+     {
+-        input.length = *params->data_length + params->token_length;
++        /* the token comes first (see seal_message_windows); any split point between the
++         * two buffers gives the same wrap token */
++        input.length = params->token_length + *params->data_length;
+         if (!(input.value = malloc( input.length ))) return STATUS_NO_MEMORY;
+-        memcpy( input.value, *params->data, *params->data_length );
+-        memcpy( (char *)input.value + *params->data_length, params->token, params->token_length );
++        memcpy( input.value, params->token, params->token_length );
++        memcpy( (char *)input.value + params->token_length, *params->data, *params->data_length );
+     }
+ 
+     ret = pgss_unwrap( &minor_status, ctx, &input, &output, &conf_state, NULL );
+@@ -1076,7 +1144,17 @@ static NTSTATUS unseal_message_no_vector( gss_ctx_id_t ctx, const struct unseal_
+             *params->data = params->stream;
+             *params->data_length = output.length;
+         }
+-        else memcpy( *params->data, output.value, output.length );
++        else if (output.length > *params->data_length)
++        {
++            WARN( "plaintext %lu longer than the data buffer %u\n", (SIZE_T)output.length, *params->data_length );
++            pgss_release_buffer( &minor_status, &output );
++            return SEC_E_BUFFER_TOO_SMALL;
++        }
++        else
++        {
++            memcpy( *params->data, output.value, output.length );
++            *params->data_length = output.length;
++        }
+         pgss_release_buffer( &minor_status, &output );
+     }
+ 
+-- 
+2.47.3
+
