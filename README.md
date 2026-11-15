@@ -28,3 +28,31 @@ tests/run-regression.sh build/install-wine-patched patched
 - XWayland/X11 (winex11) first; native Wayland is a later experiment.
 - Microsoft binaries are never committed, packaged or downloaded by this project.
 - The Wine prefix is an isolation boundary for *configuration*, not a security sandbox.
+
+## License
+
+- **This project's own code and docs** (launcher, tools, tests, docs, specification) are
+  under the [MIT License](LICENSE).
+- **The Wine patches in [`patches/`](patches/)** change Wine's own source files. They are
+  derivative works of Wine and are distributed under Wine's license, the
+  [GNU LGPL 2.1 or later](https://gitlab.winehq.org/wine/wine/-/blob/master/COPYING.LIB),
+  not under MIT.
+- **Wine and the libraries it uses** keep their own licenses: Wine is LGPL 2.1 or later,
+  and libraries such as GnuTLS, FreeType and MIT Kerberos each have their own.
+  A runtime built with `tools/build-wine.sh` is a build of Wine, so redistributing it
+  means following Wine's LGPL and the licenses of the libraries it bundles.
+- **Test-only tools** (the FreeRDP shadow server used as a local RDP *server*, pyspnego,
+  python-gssapi, python-xlib, Debian's MIT KDC) are fetched or installed separately, keep
+  their own licenses, and are not distributed by this project.
+
+### Microsoft files
+
+This project contains no Microsoft software and never downloads or redistributes any.
+You must supply `mstsc.exe`, `mstscax.dll`, their MUI files, fonts and any other Microsoft
+files yourself, from a Windows installation you are licensed to use. It is your
+responsibility to make sure your license permits using those files this way (see
+[docs/binary-acquisition.md](docs/binary-acquisition.md)). Nothing in this repository
+grants any rights to Microsoft software.
+
+Microsoft, Windows and Remote Desktop are trademarks of Microsoft Corporation. This
+project is not affiliated with or endorsed by Microsoft.
