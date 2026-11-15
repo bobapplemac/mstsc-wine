@@ -4,8 +4,24 @@ Run Microsoft's genuine Remote Desktop Connection client (`mstsc.exe` + `mstscax
 on Linux through a purpose-built, isolated Wine runtime. The RDP protocol is
 Microsoft's. There is no FreeRDP, no VM and no remote Windows.
 
-**Status: pre-alpha.** The runtime builds and loads the client; the client UI is blocked
-on operator-supplied MUI files. See [docs/STATUS.md](docs/STATUS.md).
+**Status: alpha.** It connects to real Windows hosts and runs full sessions, but it's
+tested on only one Linux desktop so far. Details: [docs/STATUS.md](docs/STATUS.md).
+
+What works with the genuine client:
+- The connection dialog, rendered close to Windows Server 2022.
+- TLS connections, with Windows' certificate warning.
+- Network Level Authentication (CredSSP) with NTLM, and with Kerberos without joining the
+  Linux machine to the domain (sign in as `user@dns.domain`).
+- "Remember my password", and the "Your credentials did not work" re-prompt.
+- Fullscreen, Restore and Maximize.
+- Clipboard redirection: text, files and pictures, in both directions.
+
+Not done or not yet tested:
+- KDE Plasma on Wayland (the spec's primary target): tested so far only on Cinnamon (X11).
+- Servers that *require* NLA.
+- Kerberos with a NetBIOS domain name (`DOMAIN\user` falls back to NTLM).
+- Copying folder trees through the clipboard, and two sessions at once.
+- Packaging.
 
 - Authoritative spec: [MSTSC-Wine-Master-Specification.md](MSTSC-Wine-Master-Specification.md)
 - Microsoft files you must supply: [docs/binary-acquisition.md](docs/binary-acquisition.md)

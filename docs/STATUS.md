@@ -50,8 +50,7 @@ _Last updated: 2026-11-15_
     copied both ways. Pictures and every other scenario not yet checked live.
 
 ## Blockers (need human input)
-1. A domain-joined test host (Kerberos) when available. The current host covers NLA with NTLM.
-2. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
+1. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
 
 ## Next actions
 1. Clipboard follow-ups: pictures on a live session, T-013 (directory trees), T-014 (two sessions), Dolphin
