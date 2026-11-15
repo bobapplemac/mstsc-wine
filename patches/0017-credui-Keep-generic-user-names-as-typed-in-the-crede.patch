@@ -1,0 +1,36 @@
+From 59a485c1420780e2a92b65e84d9c49aac6009743 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sat, 14 Nov 2026 21:02:51 -0500
+Subject: [PATCH 17/18] credui: Keep generic user names as typed in the
+ credential dialog.
+
+The dialog completed a user name without a domain with the target name
+("target\user") even for CREDUI_FLAGS_GENERIC_CREDENTIALS.
+CredUIPromptForWindowsCredentialsW passes its caption as the target, so
+the Remote Desktop client got back "Enter your credentials\Administrator"
+for "Administrator" and saved that name.  Only domain credentials are
+completed now.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ dlls/credui/credui_main.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/credui/credui_main.c b/dlls/credui/credui_main.c
+index c752be0e..bb8c47bd 100644
+--- a/dlls/credui/credui_main.c
++++ b/dlls/credui/credui_main.c
+@@ -454,7 +454,9 @@ static void CredDialogCommandOk(HWND hwndDlg, struct cred_dialog_params *params)
+         return;
+     }
+ 
+-    if (!wcschr(user, '\\') && !wcschr(user, '@'))
++    /* generic credentials keep the user name as typed; only domain credentials are
++     * completed with the target name */
++    if (!(params->dwFlags & CREDUI_FLAGS_GENERIC_CREDENTIALS) && !wcschr(user, '\\') && !wcschr(user, '@'))
+     {
+         ULONG len_target = lstrlenW(params->pszTargetName);
+         memcpy(params->pszUsername, params->pszTargetName,
+-- 
+2.47.3
+

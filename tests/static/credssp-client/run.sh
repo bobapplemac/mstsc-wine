@@ -1,6 +1,6 @@
 #!/bin/bash
-# Run cssclient.exe against the fake NLA endpoint; both credential forms must pass and a
-# wrong password must be rejected.   run.sh WINE OUT [PORT]
+# Run cssclient.exe against the fake NLA endpoint; both credential forms and saved
+# credentials (no credentials passed, EXP-036) must pass and a wrong password must be rejected.   run.sh WINE OUT [PORT]
 W=$1 OUT=$2 PORT=${3:-44340}
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 python3 -c 'import spnego' 2>/dev/null || { echo "SKIP python3-pyspnego not installed"; exit 0; }
@@ -21,5 +21,8 @@ attempt $PORT cssp-test-pass-1 || exit 1
 grep -q 'password matches' "$OUT/server-$PORT.log" && grep -q 'CLIENT CONTINUED' "$OUT/server-$PORT.log" || { echo "FAIL server did not verify delegation"; exit 1; }
 attempt $((PORT+1)) cssp-test-pass-1 packed || exit 1
 grep -q 'password matches' "$OUT/server-$((PORT+1)).log" || { echo "FAIL packed credentials"; exit 1; }
+attempt $((PORT+3)) cssp-test-pass-1 saved || exit 1
+grep -q 'password matches' "$OUT/server-$((PORT+3)).log" || { echo "FAIL saved credentials not delegated"; exit 1; }
+echo "PASS saved credentials delegated"
 if attempt $((PORT+2)) wrong-password >/dev/null; then echo "FAIL wrong password accepted"; exit 1; fi
 echo "PASS wrong password rejected"

@@ -15,6 +15,10 @@ py() { PYTHONPATH=$ROOT/.deps/py python3 "$@"; }
 for t in Xvfb freerdp-shadow-cli3 wmctrl; do command -v $t >/dev/null || { echo "SKIP $t not installed"; exit 0; }; done
 WM=$(command -v muffin || command -v metacity) || { echo "SKIP no window manager"; exit 0; }
 rm -rf "$OUT"; mkdir -p "$OUT"; cp -a --reflink=auto "$SRC" "$OUT/pfx"
+# start from mstsc's defaults: a Default.rdp and connection bar position saved by earlier
+# sessions change where the bar's buttons are, and the clicks below depend on that
+find "$OUT/pfx/drive_c/users" -iname 'Default.rdp' -delete
+sed -i '/^"LastBBarWidth"=\|^"LastBBarXPos"=/d' "$OUT/pfx/user.reg"   # remembered bar position
 cleanup() {
     WINEPREFIX=$OUT/pfx "$ROOT/build/install-wine-patched/bin/wineserver" -k 2>/dev/null
     kill ${pids[@]} 2>/dev/null; "$ROOT/tests/lib/xephyr.sh" stop $D

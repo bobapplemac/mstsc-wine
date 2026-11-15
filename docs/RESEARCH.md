@@ -83,7 +83,7 @@ From `tools/check-imports.py wine-src mstsc.exe mstscax.dll`. These resolve to
 | ucrtbase `__C_specific_handler_noexcept` | mstsc.exe (static) | SEH handler for noexcept frames; hit only while an exception unwinds |
 | shlwapi ordinal 628 | both (static) | identity unknown; needs call-site analysis |
 | sechost `CredWriteDomainCredentialsW`, `CredProtectW`, `CredUnprotectW` (stubs) | mstscax (static) | credential saving paths |
-| advapi32 `CredWriteDomainCredentialsW` | mstsc.exe (delay) | missing export |
+| advapi32 `CredWriteDomainCredentialsW` | mstsc.exe (delay) | missing export; not used by "Remember my password" (R-021) |
 | oleaut32 `BSTR_User*64` | mstscax (delay) | Wine exports only the non-64 names |
 | rpcrt4 `NdrMesType{Encode,Decode,Free}3` | mstscax (delay) | serialization |
 | comctl32 ordinal 345, d2d1 ordinal 1 | delay | identity to confirm |
@@ -232,3 +232,19 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   account) is a usable offline endpoint for client-side GUI behaviour. It does not replace
   a Windows host for protocol or feature fidelity (V for window behaviour, H otherwise).
 
+## R-021 "Remember my password" (V/I)
+- mstscax saves credentials only after the server reports a completed logon
+  (`OnLoginComplete` → `PersistTsCredentialsAndUsernameHint` → `SaveCreds`), with
+  `CredGetSessionTypes` and `CredWriteW`: `CRED_TYPE_DOMAIN_PASSWORD`, target
+  `TERMSRV/<host>`, `CRED_PERSIST_LOCAL_MACHINE` (V: static analysis plus EXP-034 trace).
+  The prompt-time path with `CredWriteDomainCredentialsW` was skipped in every run (I).
+- The prompt is shown by mstscax (`CTscCredentialsQueryUi`), not mstsc.exe (V: relay
+  return addresses).
+- On reconnect mstsc only checks that a saved credential exists, then passes CredSSP no
+  credentials (submit type 51, `pSpnegoCred` NULL). CredSSP must find the saved password
+  itself, as Windows LSA does for `TERMSRV/*` under the default delegation policy (V for
+  mstsc's side; H that Windows' lookup is by exact SPN).
+- A FreeRDP shadow server never sends the logon-complete notification, so the save can
+  only be observed against Windows. Tests seed the saved credential directly (V).
+- Saved settings in a prefix (`Default.rdp`, `LastBBarXPos`/`LastBBarWidth`) move the
+  connection bar; GUI tests that click it must reset them (V).

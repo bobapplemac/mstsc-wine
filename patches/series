@@ -14,3 +14,5 @@
 0014-credui-Implement-CredUIPromptForWindowsCredentialsW-.patch
 0015-secur32-Add-a-CredSSP-client-security-package.patch
 0016-winex11-Release-fullscreen-cursor-clipping-when-a-wi.patch
+0017-credui-Keep-generic-user-names-as-typed-in-the-crede.patch
+0018-secur32-Delegate-saved-credentials-in-CredSSP-when-n.patch

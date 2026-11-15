@@ -1,10 +1,12 @@
 /* CredSSP (NLA) client test against tests/security/credssp/fake-rdp-credssp.py.
- *   cssclient.exe PORT USER DOMAIN PASSWORD [packed]
+ *   cssclient.exe PORT USER DOMAIN PASSWORD [packed|saved]
  * Negotiates PROTOCOL_HYBRID, runs the CREDSSP package as the Remote Desktop client
  * does (TERMSRV/ target, delegation), checks SECPKG_ATTR_SERVER_AUTH_FLAGS reports an
  * unauthenticated server for an untrusted certificate, then sends one RDP-like PDU
  * through the CredSSP channel.  "packed" passes the credentials the way mstsc does:
- * CredsspSubmitBufferBoth with a packed KERB_INTERACTIVE_UNLOCK_LOGON.
+ * CredsspSubmitBufferBoth with a packed KERB_INTERACTIVE_UNLOCK_LOGON.  "saved" stores them
+ * as mstsc's "Remember my password" does (CredWriteW, TERMSRV/localhost) and passes no
+ * credentials to CredSSP, which must delegate the saved ones (EXP-036).
  * Exit 0 on success. Test accounts only. */
 #define SECURITY_WIN32
 #include <winsock2.h>
@@ -12,6 +14,7 @@
 #include <sspi.h>
 #include <schannel.h>
 #include <ntsecapi.h>
+#include <wincred.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +66,20 @@ int main(int argc, char **argv)
     id.Password = (unsigned short *)pass; id.PasswordLength = wcslen(pass);
     id.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
     if (argc > 5 && !strcmp(argv[5], "packed")) { cc.Type = 50; cc.pSpnegoCred = pack(user, domain, pass); }
+    if (argc > 5 && !strcmp(argv[5], "saved"))
+    {
+        WCHAR name[260];
+        CREDENTIALW c = {0};
+        swprintf(name, 260, L"%ls\\%ls", domain, user);
+        c.Type = CRED_TYPE_DOMAIN_PASSWORD;
+        c.TargetName = (WCHAR *)L"TERMSRV/localhost";
+        c.UserName = name;
+        c.CredentialBlob = (BYTE *)pass;
+        c.CredentialBlobSize = wcslen(pass) * sizeof(WCHAR);
+        c.Persist = CRED_PERSIST_LOCAL_MACHINE;
+        if (!CredWriteW(&c, 0)) { printf("FAIL CredWriteW %lu\n", GetLastError()); return 4; }
+        cc.Type = 51; cc.pSpnegoCred = NULL;   /* as mstsc passes it when credentials are saved */
+    }
     schan.grbitEnabledProtocols = SP_PROT_TLS1_2_CLIENT;
 
     WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -125,6 +142,7 @@ int main(int argc, char **argv)
     Sleep(500);
     printf("PASS CredSSP complete\n");
     DeleteSecurityContext(&ctx); FreeCredentialsHandle(&cred);
+    if (argc > 5 && !strcmp(argv[5], "saved")) CredDeleteW(L"TERMSRV/localhost", CRED_TYPE_DOMAIN_PASSWORD, 0);
     closesocket(s);
     return 0;
 }

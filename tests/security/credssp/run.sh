@@ -4,6 +4,9 @@
 # Works on a throwaway copy of the prefix. Needs Xephyr and python3-pyspnego.
 #  1. mstsc requests HYBRID, shows the credential prompt, completes CredSSP; the server
 #     verifies the delegated password and receives the MCS Connect Initial.
+#  2. With a saved credential for TERMSRV/localhost ("Remember my password"), mstsc connects
+#     without a prompt and CredSSP delegates the saved password (EXP-036, ADR-0020).
+# Needs the mingw cross compiler for the seeding helper (phase 2 is skipped without it).
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd); HERE=$ROOT/tests/security/credssp
 SRC=${1:-$ROOT/artifacts/prefixes/mstsc-patched}
@@ -31,5 +34,24 @@ req=$(grep -o 'requestedProtocols=[0-9]*' "$OUT/server.log" | head -1 | cut -d= 
 check "client offered HYBRID (CredSSP)" $(( ${req:-0} & 2 ? 1 : 0 ))
 check "CredSSP completed and delegated the right password" $(grep -q 'CREDSSP COMPLETE.*password matches' "$OUT/server.log" && echo 1)
 check "RDP continued over the CredSSP channel (MCS Connect Initial)" $(grep -q 'CLIENT CONTINUED.*first byte 0x03' "$OUT/server.log" && echo 1)
+
+# phase 2: saved credentials
+if command -v x86_64-w64-mingw32-gcc >/dev/null && \
+   x86_64-w64-mingw32-gcc -municode -O2 -o "$OUT/credseed.exe" "$HERE/credseed.c" -ladvapi32; then
+    WINEPREFIX=$OUT/pfx WINEDEBUG=-all "$ROOT/build/install-wine-patched/bin/wine" "$OUT/credseed.exe" \
+        'TERMSRV/localhost' 'TESTDOM\nla-test' 'nla-test-pass-1' >/dev/null 2>&1
+    "$ROOT/tests/lib/xephyr.sh" start :5 || exit 1
+    NTLM_USER_FILE=$OUT/users FAKE_RDP_HOLD=3 "$HERE/fake-rdp-credssp.py" $((PORT+1)) "$OUT/cert.pem" "$OUT/key.pem" 40 > "$OUT/server2.log" 2>&1 &
+    srv=$!; sleep 1
+    DISPLAY=:5 MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state2 timeout 35 \
+        "$ROOT/launcher/mstsc-wine" run "/v:localhost:$((PORT+1))" >/dev/null 2>&1 &
+    cli=$!
+    for _ in $(seq 60); do grep -q 'CLIENT CONTINUED\|connection ended\|no data' "$OUT/server2.log" && break; sleep 0.5; done
+    kill $cli 2>/dev/null; WINEPREFIX=$OUT/pfx "$ROOT/build/install-wine-patched/bin/wineserver" -k 2>/dev/null
+    kill $srv 2>/dev/null; wait 2>/dev/null
+    check "saved credentials: CredSSP delegated the saved password without a prompt" $(grep -q 'CREDSSP COMPLETE.*password matches' "$OUT/server2.log" && echo 1)
+else
+    echo "SKIP saved credentials (no mingw cross compiler)"
+fi
 echo "$fail failure(s)"
 exit $((fail > 0))
