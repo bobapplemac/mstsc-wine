@@ -1,0 +1,53 @@
+From 7b3d5add8090ed3fbf32d33146d0ad29392cc223 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 15:27:39 -0500
+Subject: [PATCH 31/31] comctl32/button: Leave space between a themed group box
+ frame and its caption.
+
+The themed group box cleared exactly the caption's text rectangle from
+the frame, so the frame line ran up to the first and last glyphs. Windows
+leaves 2-3 pixels on each side ("Logon settings" in mstsc). Clear the
+text rectangle widened by 2 pixels on each side.
+---
+ dlls/comctl32_v6/button.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/comctl32_v6/button.c b/dlls/comctl32_v6/button.c
+index 9128e523..2dc73b29 100644
+--- a/dlls/comctl32_v6/button.c
++++ b/dlls/comctl32_v6/button.c
+@@ -2927,7 +2927,7 @@ cleanup:
+ 
+ static void GB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, int state, UINT dtFlags, BOOL focused)
+ {
+-    RECT clientRect, contentRect, labelRect, imageRect, textRect, bgRect;
++    RECT clientRect, contentRect, labelRect, imageRect, textRect, gapRect, bgRect;
+     HRGN region, textRegion = NULL;
+     LOGFONTW lf;
+     HFONT font, hPrevFont = NULL;
+@@ -2970,9 +2970,12 @@ static void GB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+     labelRect = clientRect;
+     InflateRect(&labelRect, -7, 1);
+     dtFlags = BUTTON_CalcLayoutRects(infoPtr, hDC, &labelRect, &imageRect, &textRect);
++    /* Windows leaves a little space between the frame and the caption on both sides */
++    gapRect = textRect;
++    InflateRect(&gapRect, 2, 0);
+     if (dtFlags != (UINT)-1 && !show_image_only(infoPtr))
+     {
+-        textRegion = CreateRectRgnIndirect(&textRect);
++        textRegion = CreateRectRgnIndirect(&gapRect);
+         ExtSelectClipRgn(hDC, textRegion, RGN_DIFF);
+     }
+ 
+@@ -2998,7 +3001,7 @@ static void GB_ThemedPaint(HTHEME theme, const BUTTON_INFO *infoPtr, HDC hDC, in
+             SelectClipRgn(hDC, textRegion);
+             DeleteObject(textRegion);
+         }
+-        FillRect(hDC, &textRect, brush ? brush : GetSysColorBrush(COLOR_BTNFACE));
++        FillRect(hDC, &gapRect, brush ? brush : GetSysColorBrush(COLOR_BTNFACE));
+         BUTTON_DrawThemedLabel(infoPtr, hDC, dtFlags, &imageRect, &textRect, theme, part, state);
+     }
+ 
+-- 
+2.47.3
+

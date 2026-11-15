@@ -27,3 +27,5 @@
 0027-server-Invalidate-a-child-moved-into-an-invalid-part.patch
 0028-win32u-Use-the-v35-TrueType-interpreter-for-Windows-.patch
 0029-uxtheme-Give-nested-ETDT_ENABLE-dialogs-the-texture-.patch
+0030-comctl32-toolbar-Do-not-add-a-top-margin-to-non-flat.patch
+0031-comctl32-button-Leave-space-between-a-themed-group-b.patch

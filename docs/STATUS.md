@@ -30,13 +30,14 @@ _Last updated: 2026-11-15_
 - Kerberos: works without joining the domain (patches 0022–0025, ADR-0025–0028), offline against an MIT realm and live against `<domain-rdp-host>` in `<test-domain>`. Sign in as `user@dns.domain` (or `dns.domain\user`). No certificate warning then, as on Windows.
 - Re-prompt dialog: the whole message is shown, wrapped, and the password field is empty, as on Windows (patches 0020–0021, ADR-0023/0024). Verified offline with the genuine mstsc and confirmed by the operator against `<test-host>`.
 - Fullscreen → windowed: Restore then Maximize works under muffin and metacity (patch 0016, ADR-0019), confirmed by the operator on the real Cinnamon desktop against the Windows host. KDE/XWayland still to test.
-- Connection dialog looks like Windows Server 2022 (EXP-042–045, R-025; patches 0026–0029):
+- Connection dialog looks like Windows Server 2022 (EXP-042–047, R-025; patches 0026–0031):
   - "Show Options"/"Hide Options" are no longer cut off (patch 0026, ADR-0029).
   - Connect and Help stay visible after expanding (patch 0027, ADR-0030; a wineserver repaint bug, also in unmodified Wine 11.0).
   - Text is as wide as on Windows, so the message wraps as on Windows (patch 0028, ADR-0031). The fonts were already right: Microsoft Sans Serif for the body, Tahoma for the banner, as on Windows.
   - The credentials panel on the General tab is white like the tab page, not a grey box (patch 0029, ADR-0032).
   - Test: `tests/static/dialog-layout` (in the regression suite).
-  - Remaining differences (cosmetic, not fixed): Windows 10 button, group-box and tab drawing details.
+  - Hovering over Show/Hide Options draws the whole frame (patch 0030, ADR-0033). The group box frames leave space around their captions (patch 0031, ADR-0034).
+  - Remaining differences (cosmetic, not fixed): Windows 10 button face and tab row drawing details.
 
 ## Blockers (need human input)
 1. A domain-joined test host (Kerberos) when available. The current host covers NLA with NTLM.

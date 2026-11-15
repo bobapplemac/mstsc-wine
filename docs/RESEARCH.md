@@ -324,7 +324,10 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
     `ETDT_ENABLE` child dialog the texture of its textured parent (I, inferred from mstsc
     behaving the same on both systems). Implemented in patch 0029 (ADR-0032).
     `tests/static/dialog-layout/nested.exe` can confirm the rule on Windows.
+- Toolbar and group box (V/I, EXP-046/047):
+  - In comctl32 v6 the expander button starts at the top of its non-flat toolbar. Wine
+    used the v5 2-pixel margin (patch 0030).
+  - Windows leaves 2–3 pixels between a themed group box frame and its caption (patch 0031).
 - Other small differences (I): Windows 10 button faces are drawn 1 px inside the button
-  rectangle on each side; the Logon/Connection settings group boxes leave a gap around their
-  captions; the tab row is a few pixels taller. These are theme drawing, not layout.
-
+  rectangle on each side; the tab row is a few pixels taller. These are theme drawing, not
+  layout.

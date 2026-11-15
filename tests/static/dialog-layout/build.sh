@@ -8,3 +8,5 @@ x86_64-w64-mingw32-gcc -O2 "$here/toolbar.c" -o "$out/toolbar.exe" -lcomctl32 -l
 x86_64-w64-mingw32-gcc -O2 "$here/textwidth.c" -o "$out/textwidth.exe" -luser32 -lgdi32
 (cd "$here" && x86_64-w64-mingw32-windres nested.rc -O coff -o "$out/nested-res.o")
 x86_64-w64-mingw32-gcc -O2 "$here/nested.c" "$out/nested-res.o" -o "$out/nested.exe" -luxtheme -lcomctl32 -luser32 -lgdi32
+x86_64-w64-mingw32-gcc -O2 "$here/tbmargin.c" "$out/nested-res.o" -o "$out/tbmargin.exe" -lcomctl32 -luser32 -lgdi32
+x86_64-w64-mingw32-gcc -O2 "$here/groupbox.c" "$out/nested-res.o" -o "$out/groupbox.exe" -luxtheme -lcomctl32 -luser32 -lgdi32

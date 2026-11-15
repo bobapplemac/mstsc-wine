@@ -1,0 +1,37 @@
+From e285f2491898890032a71c9dd33035988b4ee34c Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 15:27:39 -0500
+Subject: [PATCH 30/31] comctl32/toolbar: Do not add a top margin to non-flat
+ toolbars in v6.
+
+comctl32 v6 lays toolbar buttons out from the top of the control
+whatever the style; only v5 keeps a 2-pixel top margin for toolbars
+without TBSTYLE_FLAT. mstsc's "Show Options" expander is a 23-pixel
+toolbar (TBSTYLE_LIST | TBSTYLE_TRANSPARENT) with a 23-pixel button: the
+margin pushed the button 2 pixels down, its hot-tracking frame lost its
+bottom edge, and its label sat 2 pixels below the Connect button's.
+---
+ dlls/comctl32/toolbar.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/dlls/comctl32/toolbar.c b/dlls/comctl32/toolbar.c
+index 3dc53ac3..4410ad77 100644
+--- a/dlls/comctl32/toolbar.c
++++ b/dlls/comctl32/toolbar.c
+@@ -252,7 +252,13 @@ static LRESULT TOOLBAR_SetButtonInfo(TOOLBAR_INFO *infoPtr, INT Id,
+ 
+ static inline int default_top_margin(const TOOLBAR_INFO *infoPtr)
+ {
++#if __WINE_COMCTL32_VERSION == 6
++    /* comctl32 v6 lays buttons out from the top of the toolbar whatever the style, so a
++     * toolbar as tall as its buttons shows them, and their hot-tracking frame, in full */
++    return 0;
++#else
+     return (infoPtr->dwStyle & TBSTYLE_FLAT ? 0 : TOP_BORDER);
++#endif
+ }
+ 
+ static inline BOOL TOOLBAR_HasDropDownArrows(DWORD exStyle)
+-- 
+2.47.3
+
