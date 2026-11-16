@@ -1,0 +1,30 @@
+# Shared libraries the runtime takes from the target host (ADR-0044). Everything else a
+# bundled ELF needs must be bundled; tools/collect-libs.py fails on anything unlisted.
+# One soname glob per line. Reasons:
+#   glibc       - the platform ABI; never bundled (spec §4.2, §7.6)
+#   base        - Priority required/important on Debian 13 (apt, systemd, dpkg need them)
+#   desktop     - must match the host's display server, audio server, drivers and fonts
+libc.so.6               # glibc
+libm.so.6               # glibc
+libpthread.so.0         # glibc
+libdl.so.2              # glibc
+librt.so.1              # glibc
+libresolv.so.2          # glibc
+libutil.so.1            # glibc
+libanl.so.1             # glibc
+ld-linux-x86-64.so.2    # glibc
+libgcc_s.so.1           # base (libgcc-s1)
+libstdc++.so.6          # base (libstdc++6)
+libz.so.1               # base (zlib1g)
+liblzma.so.5            # base (liblzma5)
+libzstd.so.1            # base (libzstd1)
+libsystemd.so.0         # base (libsystemd0)
+libcap.so.2             # base (libcap2)
+libX11.so.6             # desktop (X11/XWayland client library)
+libXext.so.6            # desktop
+libxcb.so.1             # desktop
+libasound.so.2          # desktop (ALSA)
+libpulse.so.0           # desktop (PulseAudio/PipeWire-pulse client)
+libudev.so.1            # desktop (device enumeration)
+libusb-1.0.so.0         # desktop (optional: USB redirection)
+libpcsclite.so.1        # desktop (optional: smart cards)

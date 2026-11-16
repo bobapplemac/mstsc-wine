@@ -1,0 +1,11 @@
+#!/bin/sh
+# mstsc-wine private NTLM helper (ADR-0042). Wine runs this file through WINENTLMAUTH.
+# It runs the bundled Samba ntlm_auth with only the bundled libraries and an empty private
+# configuration: the host's Samba, smb.conf and Samba modules are never used.
+# Nothing is logged here; credentials only pass through the stdin/stdout pipe.
+here=$(cd "$(dirname "$0")" && pwd -P) || exit 1
+base=$(cd "$here/../.." && pwd -P) || exit 1
+LD_LIBRARY_PATH="$here/../lib:$base/gnutls:$base/deps"
+LD_PRELOAD=libmstsc-samba-paths.so
+export LD_LIBRARY_PATH LD_PRELOAD
+exec "$here/ntlm_auth.bin" --configfile="$here/../smb.conf" "$@"

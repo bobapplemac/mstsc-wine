@@ -1,0 +1,69 @@
+# Debian 13 (trixie) binary packages bundled privately into the runtime (ADR-0044, ADR-0045).
+# Format: PACKAGE VERSION SHA256 POOL_PATH  (POOL_PATH is relative to a Debian mirror root).
+# Fetched by tools/fetch-debs.sh from deb.debian.org, security.debian.org, then
+# snapshot.debian.org; every file must match its SHA-256. Refresh: tools/update-debian-lock.sh.
+# Samba's ntlm_auth (client helper, ADR-0042) and its private libraries
+#pkg winbind
+#pkg samba-libs
+#pkg libwbclient0
+#pkg libtalloc2
+#pkg libtevent0t64
+#pkg libtdb1
+#pkg libldb2
+#pkg libpopt0
+#pkg libbsd0
+#pkg libmd0
+#pkg libjansson4
+#pkg libicu76
+#pkg libldap2
+#pkg libsasl2-2
+#pkg libssl3t64
+# MIT Kerberos (dlopened by Wine's kerberos.so; also used by Samba)
+#pkg libkrb5-3
+#pkg libgssapi-krb5-2
+#pkg libk5crypto3
+#pkg libkrb5support0
+#pkg libcom-err2
+#pkg libkeyutils1
+# Wine's ntdll.so needs libunwind
+#pkg libunwind8
+# Libraries the patched GnuTLS links against (the patched libgnutls itself is built from source)
+#pkg libnettle8t64
+#pkg libhogweed6t64
+#pkg libgmp10
+#pkg libtasn1-6
+#pkg libidn2-0
+#pkg libunistring5
+#pkg libp11-kit0
+#pkg libffi8
+#snapshot 20261116T001115Z
+winbind 2:4.22.11+dfsg-0+deb13u1 69a43015609c5a6e7e2baaabc7286cafa93b4f25ca6f8df31a49962ab5bb703a pool/main/s/samba/winbind_4.22.11+dfsg-0+deb13u1_amd64.deb
+samba-libs 2:4.22.11+dfsg-0+deb13u1 1b35a51399d31a4cf56ab3340320d790ed28397f17bafad038c535a430de7f03 pool/main/s/samba/samba-libs_4.22.11+dfsg-0+deb13u1_amd64.deb
+libwbclient0 2:4.22.11+dfsg-0+deb13u1 a133ae6f275d737d26f642f9e7d22b0cbef16c8f3ea58f63ec9da8fbbb6bd2f8 pool/main/s/samba/libwbclient0_4.22.11+dfsg-0+deb13u1_amd64.deb
+libtalloc2 2:2.4.3+samba4.22.11+dfsg-0+deb13u1 b4cc8aa74c8b7c05a64efb6577acc955f522a8e39d8f37fe60b1b3fe6634ce96 pool/main/s/samba/libtalloc2_2.4.3+samba4.22.11+dfsg-0+deb13u1_amd64.deb
+libtevent0t64 2:0.16.2+samba4.22.11+dfsg-0+deb13u1 f558a1c251768eeb8898e8ec8064f665653a10e2584785868ca36d412511d996 pool/main/s/samba/libtevent0t64_0.16.2+samba4.22.11+dfsg-0+deb13u1_amd64.deb
+libtdb1 2:1.4.13+samba4.22.11+dfsg-0+deb13u1 49f805c2c7e6e29a9f026689241b493bbd2bbf56037f296a66991448954333d7 pool/main/s/samba/libtdb1_1.4.13+samba4.22.11+dfsg-0+deb13u1_amd64.deb
+libldb2 2:2.11.0+samba4.22.11+dfsg-0+deb13u1 8c61310699c84116540e4bff05085e8a4bcf302b4ed58cee1cb4c0c40eaa9670 pool/main/s/samba/libldb2_2.11.0+samba4.22.11+dfsg-0+deb13u1_amd64.deb
+libpopt0 1.19+dfsg-2 07f649b706852af937654295697dcfc7858f3295718ec18681dce1704663e4f2 pool/main/p/popt/libpopt0_1.19+dfsg-2_amd64.deb
+libbsd0 0.12.2-2 e5a85986fa6bec3307ab1bc860736b478b331882bc45e17675a7bdf88eecb43a pool/main/libb/libbsd/libbsd0_0.12.2-2_amd64.deb
+libmd0 1.1.0-2+b1 7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44 pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb
+libjansson4 2.14-2+b3 60707a62fe6c1228c3389b12a13ca4efd76defc5532473e547a29e99cf7d2a6e pool/main/j/jansson/libjansson4_2.14-2+b3_amd64.deb
+libicu76 76.1-4 c1bf762996de9ecba9b9d871e4928a8090f023a3e9e7fa3240b3d90f892a01dc pool/main/i/icu/libicu76_76.1-4_amd64.deb
+libldap2 2.6.10+dfsg-1 60069e4a550ca890113fa89d3001417781b18e146ec5d637d31e368dec9909bd pool/main/o/openldap/libldap2_2.6.10+dfsg-1_amd64.deb
+libsasl2-2 2.1.28+dfsg1-9 66e49d7ae026811b49a0050f18b0325960a2625ffd1ff60d91b7844a815fa9d2 pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28+dfsg1-9_amd64.deb
+libssl3t64 3.5.7-1~deb13u3 ff16bc048bcd7d1b256094450b79c77947d8e76fe2a24bd99b91021d591fa074 pool/updates/main/o/openssl/libssl3t64_3.5.7-1~deb13u3_amd64.deb
+libkrb5-3 1.21.3-5+deb13u1 47d71d6a7f2e59b9bae5f89602397594805113b95889ad18fa703cd53abafc97 pool/main/k/krb5/libkrb5-3_1.21.3-5+deb13u1_amd64.deb
+libgssapi-krb5-2 1.21.3-5+deb13u1 30847c1fde4240567d7ed3aeab4f655dd591203758b857e85e824045aae70299 pool/main/k/krb5/libgssapi-krb5-2_1.21.3-5+deb13u1_amd64.deb
+libk5crypto3 1.21.3-5+deb13u1 7da07ee674b47f1f0be7cc89317c25310086a1f1761217d0f72e6ae2c5a69b84 pool/main/k/krb5/libk5crypto3_1.21.3-5+deb13u1_amd64.deb
+libkrb5support0 1.21.3-5+deb13u1 3a0acd8b37955c0e102c756b52c97df2a31f67b96453c35dab70df218d309117 pool/main/k/krb5/libkrb5support0_1.21.3-5+deb13u1_amd64.deb
+libcom-err2 1.47.2-3+b12 bd43e020b8fed399db3eebf098111f10fba4c436fff99ccad72cc7e27c9764ec pool/main/e/e2fsprogs/libcom-err2_1.47.2-3+b12_amd64.deb
+libkeyutils1 1.6.3-6 0b11ad17be0300b63ad4eeb4c6450fed24d34b7b740f23e5363dcb29ee6d5eba pool/main/k/keyutils/libkeyutils1_1.6.3-6_amd64.deb
+libunwind8 1.8.1-0.1 db21a86dd05c93413f0ef36282a9c64d32410d240f332273a53be1408bec1f62 pool/main/libu/libunwind/libunwind8_1.8.1-0.1_amd64.deb
+libnettle8t64 3.10.1-1 1b03d4a9cd9c8143ba50fe6396f36937e901a317d492d179f4596862c1731cfe pool/main/n/nettle/libnettle8t64_3.10.1-1_amd64.deb
+libhogweed6t64 3.10.1-1 b059ed155115ac09da295322de48ee1ed58ef5fa45edcc9e12ff0e94636ef25f pool/main/n/nettle/libhogweed6t64_3.10.1-1_amd64.deb
+libgmp10 2:6.3.0+dfsg-3 d0d0265eb01770f17afd0f7c8c0622f80479dcfbbe13653a0debeec61464e622 pool/main/g/gmp/libgmp10_6.3.0+dfsg-3_amd64.deb
+libtasn1-6 4.20.0-2+deb13u1 23fec6e06583ce2bad9b2c04c9b485e90440e259b1abf8677cd80d3ce60831ad pool/main/libt/libtasn1-6/libtasn1-6_4.20.0-2+deb13u1_amd64.deb
+libidn2-0 2.3.8-2 90b039bcdc4578f8e1c4935adf8dbb525e36a164deefdbbb8c45bac347d48278 pool/main/libi/libidn2/libidn2-0_2.3.8-2_amd64.deb
+libunistring5 1.3-2 6dd3490bef06ea1096f32d10766b7e016cf579bfae8451d1b7df15ce05b8aa46 pool/main/libu/libunistring/libunistring5_1.3-2_amd64.deb
+libp11-kit0 0.25.5-3 784bf2063e166c8bc851a32623b74ebd85c499043a9d57c5bbd64fa63447f45a pool/main/p/p11-kit/libp11-kit0_0.25.5-3_amd64.deb
+libffi8 3.4.8-2 0ebdc340de33333639c3c63874cd4b15ac2e83dfa1ef3053b7eefaf4919f4f68 pool/main/libf/libffi/libffi8_3.4.8-2_amd64.deb
