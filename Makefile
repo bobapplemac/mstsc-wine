@@ -7,8 +7,8 @@ SHELL := /bin/bash
 
 ROOT          := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 # docker (default when usable) or native (Debian 13 host with the packages in packaging/build-deps.txt)
-BUILD_ENGINE  ?= $(shell docker info >/dev/null 2>&1 && echo docker || echo docker-unavailable)
 DOCKER        ?= docker
+BUILD_ENGINE  ?= $(shell $(DOCKER) info >/dev/null 2>&1 && echo docker || echo docker-unavailable)
 JOBS          ?= $(shell nproc)
 ARTIFACTS     ?= $(ROOT)/artifacts
 APPDIR        ?= $(ARTIFACTS)/MSTSC-Wine.AppDir
