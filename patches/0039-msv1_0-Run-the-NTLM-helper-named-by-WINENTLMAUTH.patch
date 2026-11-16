@@ -1,0 +1,50 @@
+From 1cf537aa612566b78961fdf552819a8935435b12 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 19:09:35 -0500
+Subject: [PATCH 39/39] msv1_0: Run the NTLM helper named by WINENTLMAUTH.
+
+A self-contained runtime ships its own ntlm_auth and must not pick up an
+unrelated one from PATH. When WINENTLMAUTH is set, it must be an absolute
+path and that file is run; there is no fallback to a PATH lookup. When it
+is unset, the helper is still looked up through PATH as before.
+---
+ dlls/msv1_0/unixlib.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/msv1_0/unixlib.c b/dlls/msv1_0/unixlib.c
+index b385f4a4..605ae69b 100644
+--- a/dlls/msv1_0/unixlib.c
++++ b/dlls/msv1_0/unixlib.c
+@@ -164,6 +164,7 @@ static NTSTATUS ntlm_fork( void *args )
+     struct ntlm_ctx *ctx = params->ctx;
+     posix_spawn_file_actions_t file_actions;
+     int pipe_in[2], pipe_out[2], err;
++    const char *helper;
+     NTSTATUS status = STATUS_SUCCESS;
+ 
+ #ifdef HAVE_PIPE2
+@@ -198,7 +199,20 @@ static NTSTATUS ntlm_fork( void *args )
+     posix_spawn_file_actions_addclose( &file_actions, pipe_in[0] );
+     posix_spawn_file_actions_addclose( &file_actions, pipe_in[1] );
+ 
+-    if ((err = posix_spawnp( &ctx->pid, params->argv[0], &file_actions, NULL, params->argv, environ )))
++    /* WINENTLMAUTH names the exact helper to run (an absolute path), so that a
++     * self-contained runtime never picks up an unrelated ntlm_auth from PATH. */
++    if ((helper = getenv( "WINENTLMAUTH" )) && helper[0])
++    {
++        if (helper[0] != '/')
++        {
++            ERR_(winediag)( "WINENTLMAUTH must be an absolute path, ignoring %s\n", debugstr_a(helper) );
++            err = EINVAL;
++        }
++        else err = posix_spawn( &ctx->pid, helper, &file_actions, NULL, params->argv, environ );
++    }
++    else err = posix_spawnp( &ctx->pid, params->argv[0], &file_actions, NULL, params->argv, environ );
++
++    if (err)
+     {
+         ctx->pid = -1;
+         write( pipe_in[1], "BH\n", 3 );
+-- 
+2.47.3
+

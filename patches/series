@@ -36,3 +36,4 @@
 0036-ole32-Offer-CF_HDROP-for-virtual-files-on-the-clipbo.patch
 0037-winex11-Export-CF_HDROP-as-x-special-gnome-copied-fi.patch
 0038-winex11-Do-not-escape-path-separators-in-exported-fi.patch
+0039-msv1_0-Run-the-NTLM-helper-named-by-WINENTLMAUTH.patch

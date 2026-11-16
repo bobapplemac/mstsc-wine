@@ -38,6 +38,7 @@ check "schannel: RDP-style server cert (no digitalSignature)" $exp_fix env ${LDP
 CSSP=$ROOT/artifacts/credssp-client
 "$ROOT/tests/static/credssp-client/build.sh" "$CSSP" >/dev/null 2>&1 || { echo "credssp fixture build failed"; exit 1; }
 check "credssp: NLA client (delegation, saved credentials, server auth flags, bad password)" $exp_fix env ${LDP:+LD_LIBRARY_PATH=$LDP} "$ROOT/tests/static/credssp-client/run.sh" "$W" "$CSSP"
+check "msv1_0: WINENTLMAUTH selects the NTLM helper, no PATH fallback" $exp_fix env ${LDP:+LD_LIBRARY_PATH=$LDP} "$ROOT/tests/static/ntlm-helper/run.sh" "$W" "$CSSP"
 KRB=$ROOT/artifacts/kerberos-check; rm -rf "$KRB"
 [[ -x $ROOT/.deps/krb5kdc/root/usr/sbin/krb5kdc ]] && \
 check "kerberos: CredSSP with Kerberos (UPN, realm case, no default realm, memory ticket cache)" $exp_fix "$ROOT/tests/security/kerberos/run.sh" "$W" "$KRB"
