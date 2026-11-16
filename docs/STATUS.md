@@ -14,7 +14,7 @@ _Last updated: 2026-11-15_
 | P4 reproducible build | **done**: pinned Debian 13 Docker image (digest + snapshot.debian.org), native engine, `Makefile` (ADR-0045); Docker and native builds produce the same Wine source tree and library set |
 | P5 canonical AppDir | **done**: `tools/assemble-appdir.sh`, first-run prefix set-up under a lock with state marker and registry backups, `doctor`, metadata (ADR-0043) |
 | P6 deliverables | **done**: AppImage (100 MB), `.tar.zst` (65 MB), install/uninstall/`--integrate` with manifest (ADR-0047) |
-| P7 quality and handoff | **in progress**: `tests/portability/run.sh` release gates; clean second machine, KDE Wayland and live-host checks need the operator (docs/PACKAGING.md §8) |
+| P7 quality and handoff | **in progress**: release gates 25/0/4 (`tests/portability/run.sh`); exporter verified on Server 2022 (EXP-063); **fresh Debian 13 KDE Plasma (X11) machine: built from a fresh clone and runs (EXP-064)**. Open: KDE Plasma on Wayland, and a recorded checklist of live-host checks from the package (docs/PACKAGING.md §8) |
 
 | Milestone | State |
 |---|---|
@@ -62,7 +62,7 @@ _Last updated: 2026-11-15_
     copied both ways. Pictures and every other scenario not yet checked live.
 
 ## Blockers (need human input)
-1. The primary target environment (KDE Plasma Wayland, 125%) is not this machine.
+1. KDE Plasma on Wayland (125%), the primary target, is still untested. KDE Plasma on X11 works on a second machine (EXP-064).
 
 ## Next actions
 1. Clipboard follow-ups: pictures on a live session, T-013 (directory trees), T-014 (two sessions), Dolphin

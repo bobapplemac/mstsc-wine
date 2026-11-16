@@ -23,11 +23,11 @@ What works with the genuine client:
   ([docs/PACKAGING.md](docs/PACKAGING.md)).
 
 Not done or not yet tested:
-- KDE Plasma on Wayland (the spec's primary target): tested so far only on Cinnamon (X11).
+- KDE Plasma on Wayland (the spec's primary target): tested so far on Cinnamon (X11) and
+  KDE Plasma (X11).
 - Servers that *require* NLA.
 - Kerberos with a NetBIOS domain name (`DOMAIN\user` falls back to NTLM).
 - Copying folder trees through the clipboard, and two sessions at once.
-- The package on a second, clean Debian 13 machine (checklist in docs/PACKAGING.md §8).
 
 - Authoritative spec: [docs/MSTSC-Wine-Master-Specification.md](docs/MSTSC-Wine-Master-Specification.md)
 - Microsoft files you must supply: [docs/binary-acquisition.md](docs/binary-acquisition.md)
