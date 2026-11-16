@@ -85,4 +85,10 @@ after=$(snap)
 # 6. --purge removes user data only when asked
 install_it >/dev/null 2>&1; uninstall_it --purge >/dev/null 2>&1
 [[ ! -e $HOME/.local/share/mstsc-wine && -f $HOME/.local/share/applications/other.desktop ]] && ok "uninstall --purge removes only mstsc-wine data" || bad "purge"
+# a purge requested after the application was already removed still removes the data
+mkdir -p "$HOME/.local/share/mstsc-wine/prefix"; echo x > "$HOME/.local/share/mstsc-wine/prefix/user-data-marker"
+install_it >/dev/null 2>&1; uninstall_it >/dev/null 2>&1
+[[ -f $HOME/.local/share/mstsc-wine/prefix/user-data-marker ]] || bad "plain uninstall removed data"
+"$ROOT/packaging/integrate.sh" uninstall --purge >/dev/null 2>&1 && [[ ! -e $HOME/.local/share/mstsc-wine ]] \
+    && ok "purge after uninstall removes the data" || bad "purge after uninstall"
 exit $fail

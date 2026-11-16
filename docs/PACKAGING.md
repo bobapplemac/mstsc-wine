@@ -107,8 +107,9 @@ make install            # from the AppDir: ~/.local/opt/mstsc-wine, ~/.local/bin
 ```
 
 - **Uninstall.** `make uninstall` (or `mstsc --unintegrate`) removes exactly what was
-  installed. Your settings, saved credentials and logs stay; `make uninstall PURGE=1` removes
-  them too.
+  installed. Your settings, saved credentials and logs stay; `make uninstall PURGE=1` (or
+  `mstsc --unintegrate --purge`) removes them too, also after the application was already
+  uninstalled. (`make uninstall --purge` doesn't work: make reads `--purge` as its own option.)
 - **What is never replaced.** An existing `mstsc` command, menu entry or icon that
   mstsc-wine did not install is left alone (`--force` replaces it).
 - **`.rdp` files.** Not associated unless you ask: `make install MIME=1`.

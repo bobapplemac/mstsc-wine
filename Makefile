@@ -136,8 +136,7 @@ install:
 	$(APPDIR)/usr/lib/mstsc-wine/integrate.sh install --appdir $(APPDIR) $(if $(MIME),--mime)
 
 uninstall:
-	@if [[ -x $(APPDIR)/usr/lib/mstsc-wine/integrate.sh ]]; then s=$(APPDIR)/usr/lib/mstsc-wine/integrate.sh; \
-	 else s=$(ROOT)/packaging/integrate.sh; fi; $$s uninstall $(if $(PURGE),--purge)
+	@MSTSC_WINE_PURGE_HINT='make uninstall PURGE=1' $(ROOT)/packaging/integrate.sh uninstall $(if $(PURGE),--purge)
 
 integrate-appimage:
 	$(ROOT)/packaging/integrate.sh install --appimage $(APPIMAGE)

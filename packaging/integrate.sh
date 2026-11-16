@@ -22,7 +22,7 @@
 # Only files listed in the install manifest ($OPT/install-manifest) are ever replaced or
 # removed. Existing files we do not own (another `mstsc`, desktop entry or icon) are left
 # alone and reported, unless --force. User data (prefix, settings, saved credentials,
-# logs) is kept unless `uninstall --purge`. --mime adds an .rdp file association to the
+# logs) is kept unless `uninstall --purge`, which also works after the application was removed. --mime adds an .rdp file association to the
 # desktop entry (opt-in; the default .rdp handler is never changed).
 set -euo pipefail
 umask 022
@@ -37,8 +37,8 @@ else
 fi
 D_OPT=$DESTDIR$OPT D_BIN=$DESTDIR$BINDIR D_DATA=$DESTDIR$DATADIR
 MANIFEST=$D_OPT/install-manifest
-die() { echo "mstsc-wine install: error: $*" >&2; exit 1; }
-say() { echo "mstsc-wine install: $*"; }
+die() { echo "mstsc-wine: error: $*" >&2; exit 1; }
+say() { echo "mstsc-wine: $*"; }
 
 cmd=${1:-}; shift || true
 APPDIR_SRC= APPIMAGE_SRC= MIME=0 FORCE=0 PURGE=0
@@ -191,28 +191,35 @@ cmd_install() {
 
 # ---------------------------------------------------------------- uninstall
 cmd_uninstall() {
-    [[ -f $MANIFEST ]] || { say "nothing to uninstall ($MANIFEST not found)"; return 0; }
-    local kind p
-    while IFS=$'\t' read -r kind p _; do
-        case $kind in
-            file|link) [[ -e $p || -L $p ]] && rm -f "$p";;
-            dir) rm -rf "$p";;
-        esac
-    done < "$MANIFEST"
-    rm -f "$D_OPT/current" "$D_OPT/.current-id" "$D_OPT/.previous" "$MANIFEST" "$D_OPT/.mstsc-wine-install"
-    rmdir "$D_OPT" 2>/dev/null || true
-    if [[ -z $DESTDIR ]]; then
-        command -v update-desktop-database >/dev/null && update-desktop-database -q "$D_DATA/applications" 2>/dev/null || true
+    # how the caller asks for a purge (make, mstsc --unintegrate or this script)
+    local hint=${MSTSC_WINE_PURGE_HINT:-integrate.sh uninstall --purge}
+    if [[ -f $MANIFEST ]]; then
+        local kind p
+        while IFS=$'\t' read -r kind p _; do
+            case $kind in
+                file|link) [[ -e $p || -L $p ]] && rm -f "$p";;
+                dir) rm -rf "$p";;
+            esac
+        done < "$MANIFEST"
+        rm -f "$D_OPT/current" "$D_OPT/.current-id" "$D_OPT/.previous" "$MANIFEST" "$D_OPT/.mstsc-wine-install"
+        rmdir "$D_OPT" 2>/dev/null || true
+        if [[ -z $DESTDIR ]]; then
+            command -v update-desktop-database >/dev/null && update-desktop-database -q "$D_DATA/applications" 2>/dev/null || true
+        fi
+        say "removed the application and its menu entry, icons and command"
+    else
+        say "the application is not installed in $OPT (nothing to remove there)"
     fi
-    say "removed the application and its menu entry, icons and command"
+    # user data is independent of the installation: a purge also works after an uninstall
     if [[ $PURGE == 1 ]]; then
-        local x
+        local x n=0
         for x in "${XDG_DATA_HOME:-$HOME/.local/share}/mstsc-wine" "${XDG_CONFIG_HOME:-$HOME/.config}/mstsc-wine" \
                  "${XDG_STATE_HOME:-$HOME/.local/state}/mstsc-wine" "${XDG_CACHE_HOME:-$HOME/.cache}/mstsc-wine"; do
-            [[ -d $x ]] && { rm -rf "$x"; say "purged $x"; }
+            [[ -d $x ]] && { rm -rf "$x"; say "purged $x"; n=$((n+1)); }
         done
+        if [[ $n == 0 ]]; then say "no settings, credentials or logs to purge"; fi
     else
-        say "kept your settings, saved credentials and logs (uninstall --purge removes them)"
+        say "kept your settings, saved credentials and logs (to remove them too: $hint)"
     fi
 }
 

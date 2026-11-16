@@ -480,7 +480,7 @@ cmd_wine_tool() {
 # ---------------------------------------------------------------- desktop integration
 cmd_integrate() {
     [[ $MODE == packaged ]] || die "--integrate works on the packaged application (AppImage or AppDir)"
-    exec "$LIBROOT/integrate.sh" "$@"
+    MSTSC_WINE_PURGE_HINT="mstsc --unintegrate --purge" exec "$LIBROOT/integrate.sh" "$@"
 }
 
 case "${1:-}" in
