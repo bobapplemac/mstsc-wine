@@ -103,6 +103,10 @@ Folder `system32/` (gitignored) holds mstsc.exe and mstscax.dll (20348.5866), du
 (20348.4893), devobj.dll (20348.2849), and en-US `.mui` for mstsc, mstscax and dui70
 (i386 resource-only). duser.dll was not supplied; it is delay-loaded by dui70 and has
 not been needed yet. Native devobj.dll is kept in the store but not installed (ADR-0004).
+Update 2026-11-15: the operator supplied duser.dll (10.0.20348.1, x86-64, same build; carries
+a MUI resource, but no en-US\duser.dll.mui was supplied). It is part of the component bundle
+(20 files). mstsc's connection dialog still loads neither dui70 nor duser (V, +loaddll): they
+are delay-loaded by specific UI only.
 
 ## R-009 mstscax self-registration (V/I)
 No file contains a `REGISTRY` resource (V). On Windows, servicing manifests register

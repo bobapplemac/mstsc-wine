@@ -31,7 +31,7 @@ Copy from `C:\Windows\System32\`, keeping the `en-US` sub-folder:
 | `en-US\mstsc.exe.mui` | supplied | all mstsc dialogs/strings/menus (RESEARCH R-002) |
 | `en-US\mstscax.dll.mui` | supplied | mstscax strings/dialogs and its COM registration scripts |
 | `dui70.dll` (+ `en-US\dui70.dll.mui` if it exists) | recommended | 133 DirectUI functions delay-loaded by mstscax; no Wine equivalent |
-| `duser.dll` (+ `en-US\duser.dll.mui` if it exists) | recommended | DirectUI dependency, delay-loaded by mstscax |
+| `duser.dll` (+ `en-US\duser.dll.mui` if it exists) | supplied (2026-11-15; no `.mui`) | DirectUI dependency, delay-loaded by mstscax |
 | `devobj.dll` | optional | A/B diagnostics only; the runtime ships its own (ADR-0004). Not part of the exported ZIP |
 
 ### Also needed (2026-11-14)
