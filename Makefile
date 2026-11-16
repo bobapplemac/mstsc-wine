@@ -116,12 +116,17 @@ package: appdir
 	    -C $(dir $(APPDIR)) -I 'zstd -q -19 -T0' -cf $(TARBALL).part $(notdir $(APPDIR)) && mv -f $(TARBALL).part $(TARBALL)
 	@echo "package: $(TARBALL) ($$(du -h $(TARBALL) | cut -f1)). Private: contains your Microsoft components."
 
+# Regression suite on the package itself (through its launcher), on the development runtime
+# too when one has been built (tools/build-wine.sh patched), then the release gates.
 test:
-	$(ROOT)/tests/run-regression.sh $(ROOT)/build/install-wine-patched patched
-	$(ROOT)/tests/portability/run.sh $(APPDIR) $(wildcard $(APPIMAGE))
+	$(ROOT)/tests/portability/runtime-shim.sh $(APPDIR)/AppRun $(ROOT)/build/test-shim
+	$(ROOT)/tests/run-regression.sh $(ROOT)/build/test-shim patched
+	if [[ -x $(ROOT)/build/install-wine-patched/bin/wine ]]; then \
+	  $(ROOT)/tests/run-regression.sh $(ROOT)/build/install-wine-patched patched; fi
+	$(ROOT)/tests/portability/run.sh $(APPDIR) "$(wildcard $(APPIMAGE))" "$(wildcard $(TARBALL))"
 
 test-portability:
-	$(ROOT)/tests/portability/run.sh $(APPDIR) $(wildcard $(APPIMAGE))
+	$(ROOT)/tests/portability/run.sh $(APPDIR) "$(wildcard $(APPIMAGE))" "$(wildcard $(TARBALL))"
 
 doctor:
 	$(APPDIR)/AppRun doctor
@@ -138,7 +143,7 @@ integrate-appimage:
 	$(ROOT)/packaging/integrate.sh install --appimage $(APPIMAGE)
 
 clean:
-	rm -rf $(ROOT)/build/docker $(ROOT)/build/native $(APPDIR) $(APPDIR).tmp $(APPIMAGE) $(TARBALL) \
+	rm -rf $(ROOT)/build/docker $(ROOT)/build/native $(ROOT)/build/test-shim $(APPDIR) $(APPDIR).tmp $(APPIMAGE) $(TARBALL) \
 	       $(ARTIFACTS)/*.squashfs.tmp $(ARTIFACTS)/*.part
 
 distclean: clean

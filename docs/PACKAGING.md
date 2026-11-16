@@ -40,6 +40,27 @@ elsewhere. Never publish or share the ZIP or anything built from it.
 
 ## 2. Build (on Debian 13)
 
+On a fresh Debian 13, install the build prerequisites once:
+
+```bash
+sudo apt install git make python3 curl ca-certificates squashfs-tools zstd fuse3 desktop-file-utils docker.io
+```
+
+Then either let your user run Docker (`sudo usermod -aG docker $USER`, then log out and in
+again: membership of the `docker` group is equivalent to root access) or build with
+`make DOCKER='sudo docker'`. Podman works too (`sudo apt install podman`, `make DOCKER=podman`).
+
+Only for `make test` (each missing tool makes its checks SKIP; none is needed to build or run):
+
+```bash
+sudo apt install gcc-mingw-w64-x86-64 xserver-xephyr xvfb x11-utils xclip bubblewrap metacity \
+    python3-pil python3-xlib python3-gi python3-pyspnego python3-gssapi openssl \
+    freerdp3-shadow-x11 freerdp3-dev
+tools/fetch-krb5kdc.sh      # optional: offline Kerberos realm for the Kerberos test
+```
+
+Then:
+
 ```bash
 git clone <repository-url> mstsc-wine
 cd mstsc-wine
