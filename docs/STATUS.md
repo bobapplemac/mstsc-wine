@@ -14,7 +14,7 @@ _Last updated: 2026-11-16_
 | P4 reproducible build | **done**: pinned Debian 13 Docker image (digest + snapshot.debian.org), native engine, `Makefile` (ADR-0045); Docker and native builds produce the same Wine source tree and library set |
 | P5 canonical AppDir | **done**: `tools/assemble-appdir.sh`, first-run prefix set-up under a lock with state marker and registry backups, `doctor`, metadata (ADR-0043) |
 | P6 deliverables | **done**: AppImage (100 MB), `.tar.zst` (65 MB), install/uninstall/`--integrate` with manifest (ADR-0047); `make` builds the AppImage and `make install` installs it, `make install-appdir` for development (ADR-0049) |
-| P7 quality and handoff | **in progress**: release gates 25/0/4 (`tests/portability/run.sh`); exporter verified on Server 2022 (EXP-063); **fresh Debian 13 KDE Plasma (X11) machine: built from a fresh clone and runs (EXP-064)**. Open: KDE Plasma on Wayland, and a recorded checklist of live-host checks from the package (docs/PACKAGING.md §8) |
+| P7 quality and handoff | **in progress**: release gates 25/0/4 (`tests/portability/run.sh`); exporter verified on Server 2022 (EXP-063); **fresh Debian 13 KDE Plasma (X11) machine: built from a fresh clone and runs (EXP-064)**; updated there with `make install` (AppImage install) and NLA certificate warning confirmed (EXP-068). Open: KDE Plasma on Wayland, and a recorded checklist of live-host checks from the package (docs/PACKAGING.md §8) |
 
 | Milestone | State |
 |---|---|
