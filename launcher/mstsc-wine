@@ -226,6 +226,10 @@ ensure_prefix_locked() { prefix_current || do_init; }
 
 cmd_init() { setup_env; with_lock do_init; }
 
+# Microsoft files that are never used: the runtime's builtins replace them
+# (packaging/components-policy.json "excluded").
+EXCLUDED="system32/devobj.dll system32/credssp.dll system32/tspkg.dll"
+
 # Map a component-store path to a path under C:\windows, case-normalising the
 # top-level folder (system32, Fonts, SystemResources).
 winrel() {
@@ -258,14 +262,14 @@ install_components() {
         return 0
     fi
     (cd "$c" && sha256sum --quiet -c manifest.sha256) || die "component manifest mismatch in $(redact "$c") (fail closed)"
-    # Files the runtime provides itself are kept in the store for A/B diagnostics
-    # but not installed (ADR-0004). Override with MSTSC_WINE_INSTALL_ALL=1.
+    # Microsoft files the runtime replaces with its own builtins are never installed
+    # (ADR-0004, ADR-0018); an older store may still contain them. The builtin is put back.
     # Store paths are relative to C:\windows (system32/..., Fonts/..., SystemResources/...).
     # Older flat stores (mstsc.exe, en-US/...) are treated as system32/.
-    local skip=" system32/devobj.dll " f rel win n=0
+    local skip=" $EXCLUDED " f rel win n=0
     while read -r _ rel; do
         f="$c/$rel"; win=$(winrel "$rel")
-        if [[ -z "${MSTSC_WINE_INSTALL_ALL:-}" && "$skip" == *" ${win,,} "* ]]; then
+        if [[ "$skip" == *" ${win,,} "* ]]; then
             local base; base=$(basename "${win,,}")
             local builtin="$RUNTIME/lib/wine/x86_64-windows/$base"
             if [[ -f "$builtin" ]]; then cp -f "$builtin" "$(sys32)/$base"; else rm -f "$(sys32)/$base"; fi
@@ -290,6 +294,7 @@ cmd_import() {
     (cd "$src" && find . -type f \( -iname '*.exe' -o -iname '*.dll' -o -iname '*.mui' -o -iname '*.ocx' -o -iname '*.mun' -o -iname '*.ttf' -o -iname '*.ttc' \) -printf '%P\n') |
         while read -r rel; do
             local win; win=$(winrel "$rel")
+            [[ " $EXCLUDED " == *" ${win,,} "* ]] && { note "skipped $rel (not needed: the runtime has its own)"; continue; }
             mkdir -p "$tmp/$(dirname "$win")"; cp -p "$src/$rel" "$tmp/$win"
         done
     (cd "$tmp" && find . -type f ! -name manifest.sha256 -printf '%P\n' | sort | xargs -r -d '\n' sha256sum > manifest.sha256)

@@ -106,7 +106,8 @@ not been needed yet. Native devobj.dll is kept in the store but not installed (A
 Update 2026-11-15: the operator supplied duser.dll (10.0.20348.1, x86-64, same build; carries
 a MUI resource, but no en-US\duser.dll.mui was supplied). It is part of the component bundle
 (20 files). mstsc's connection dialog still loads neither dui70 nor duser (V, +loaddll): they
-are delay-loaded by specific UI only.
+are delay-loaded by specific UI only. The Microsoft devobj.dll was deleted the same day (not
+needed; ADR-0004 update).
 
 ## R-009 mstscax self-registration (V/I)
 No file contains a `REGISTRY` resource (V). On Windows, servicing manifests register

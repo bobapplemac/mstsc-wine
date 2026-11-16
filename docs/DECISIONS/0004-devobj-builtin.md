@@ -18,3 +18,8 @@
   test documents an inference.
 - Risk: device-enumeration paths in mstscax (camera/USB/PnP redirection, P2) may hit
   stubs; acceptable for Phase 1.
+- Update 2026-11-15: the Microsoft `devobj.dll` is no longer kept at all. It was only held for
+  A/B comparisons, which are no longer needed. The component exporter and policy exclude it,
+  `mstsc-wine import` skips it, the `MSTSC_WINE_INSTALL_ALL` override is gone, and the copies
+  in `Windows/` and the development store were deleted. A store that still contains it never
+  installs it.

@@ -32,7 +32,7 @@ Copy from `C:\Windows\System32\`, keeping the `en-US` sub-folder:
 | `en-US\mstscax.dll.mui` | supplied | mstscax strings/dialogs and its COM registration scripts |
 | `dui70.dll` (+ `en-US\dui70.dll.mui` if it exists) | recommended | 133 DirectUI functions delay-loaded by mstscax; no Wine equivalent |
 | `duser.dll` (+ `en-US\duser.dll.mui` if it exists) | supplied (2026-11-15; no `.mui`) | DirectUI dependency, delay-loaded by mstscax |
-| `devobj.dll` | optional | A/B diagnostics only; the runtime ships its own (ADR-0004). Not part of the exported ZIP |
+| `devobj.dll` | **do not copy** | not needed: the runtime ships its own builtin (ADR-0004). `import` and the exporter skip it, like `credssp.dll` and `tspkg.dll` |
 
 ### Also needed (2026-11-14)
 
@@ -55,7 +55,7 @@ Mirror `C:\Windows`. The repo-root `Windows/` folder is gitignored for this purp
 
 ```
 Windows/
-  system32/            mstsc.exe, mstscax.dll, dui70.dll, devobj.dll, en-US/*.mui
+  system32/            mstsc.exe, mstscax.dll, dui70.dll, duser.dll, en-US/*.mui
   Fonts/               *.ttf
   SystemResources/     *.mun
 ```
