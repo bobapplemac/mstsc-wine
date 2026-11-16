@@ -20,7 +20,8 @@ __pycache__/
 *.ttf
 *.ttc
 # Private operator input and generated, possibly Microsoft-containing outputs (packaging spec §2.8)
-/private-input/
+/private-input/*
+!/private-input/README.md
 *.zip
 *.ZIP
 *.mun
