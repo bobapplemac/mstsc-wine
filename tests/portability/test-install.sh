@@ -1,8 +1,9 @@
 #!/bin/bash
 # PKG-017/021/023/024/025 (automated parts): install, upgrade and uninstall in a throwaway
 # HOME. Never touches the real ~/.local.
-#   test-install.sh appdir APPDIR      make install path (integrate.sh install --appdir)
-#   test-install.sh appimage APPIMAGE  mstsc --integrate / --unintegrate from the AppImage
+#   test-install.sh appdir APPDIR      make install-appdir path (integrate.sh install --appdir)
+#   test-install.sh appimage APPIMAGE  make install path: mstsc --integrate / --unintegrate
+#                                      from the AppImage, and switching from/to an AppDir install
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 mode=$1 SRC=$(readlink -f "$2")
@@ -71,6 +72,19 @@ if [[ $mode == appdir ]]; then
     new=$(readlink "$HOME/.local/opt/mstsc-wine/current")
     [[ $new != "$old" && -d $HOME/.local/opt/mstsc-wine/$old && -d $HOME/.local/opt/mstsc-wine/$new ]] \
         && ok "upgrade switches current atomically and keeps the previous version" || bad "upgrade: $old -> $new"
+fi
+# 4b. switching install modes (AppImage mode): AppDir -> AppImage -> AppDir leaves one copy
+if [[ $mode == appimage ]]; then
+    O=$HOME/.local/opt/mstsc-wine
+    (cd "$T" && "$SRC" --appimage-extract >/dev/null 2>&1) && AD=$T/squashfs-root
+    "$AD/usr/lib/mstsc-wine/integrate.sh" install --appdir "$AD" >/dev/null 2>&1
+    [[ -L $O/current && ! -e $O/mstsc-wine-x86_64.AppImage && $(readlink "$HOME/.local/bin/mstsc") == "$O/current/usr/bin/mstsc" ]] \
+        && ok "AppImage -> AppDir install: AppImage removed, mstsc points at the AppDir" || bad "AppImage -> AppDir switch"
+    install_it >/dev/null 2>&1
+    [[ -f $O/mstsc-wine-x86_64.AppImage && ! -e $O/current && ! -e $O/versions && $(readlink "$HOME/.local/bin/mstsc") == "$O/mstsc-wine-x86_64.AppImage" ]] \
+        && grep -q 'mstsc-wine-x86_64.AppImage" %f$' "$DESK" \
+        && ok "AppDir -> AppImage install: AppDir copies removed, mstsc and menu entry use the AppImage" || bad "AppDir -> AppImage switch"
+    chmod -R u+w "$AD"; rm -rf "$AD"
 fi
 [[ -f $HOME/.local/share/applications/other.desktop && -f $HOME/.local/share/icons/hicolor/48x48/apps/other.png ]] \
     && ok "unrelated desktop entry and icon untouched" || bad "unrelated files changed"

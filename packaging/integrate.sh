@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # MSTSC-Wine installation and desktop integration (ADR-0047). Shipped in the AppDir as
-# usr/lib/mstsc-wine/integrate.sh; used by `make install`/`make uninstall` and by
+# usr/lib/mstsc-wine/integrate.sh; used by `make install` (via --integrate), `make install-appdir`,
+# `make uninstall` and by
 # `mstsc --integrate`/`--unintegrate` (AppImage or extracted AppDir).
 #
 #   integrate.sh install   [--appdir DIR] [--appimage FILE] [--mime] [--force]
@@ -119,6 +120,8 @@ cmd_install() {
         for d in "$D_OPT"/versions/*/; do
             d=${d%/}; [[ $(basename "$d") == "$id" || $(basename "$d") == "$prev" ]] || rm -rf "$d"
         done
+        # switching from an AppImage install: the AppImage is no longer used
+        rm -f "$D_OPT/mstsc-wine-x86_64.AppImage"
         launcher=$OPT/current/usr/bin/mstsc
         srcdir=$APPDIR_SRC
     else
@@ -128,10 +131,16 @@ cmd_install() {
             cp "$APPIMAGE_SRC" "$dst.mstsc-tmp" && chmod 755 "$dst.mstsc-tmp" && mv -f "$dst.mstsc-tmp" "$dst"
         fi
         record file "$dst"
+        # switching from an AppDir install (make install-appdir): remove its copies. A session
+        # still running from them should be restarted.
+        if [[ -e $D_OPT/current || -L $D_OPT/current || -d $D_OPT/versions ]]; then
+            rm -rf "$D_OPT/current" "$D_OPT/versions" "$D_OPT/.current-id" "$D_OPT/.previous"
+            say "replaced the AppDir installation with the AppImage"
+        fi
         launcher=$OPT/mstsc-wine-x86_64.AppImage
         srcdir=$(cd "$SELF_DIR/../../.." && pwd)   # the mounted AppDir: icons and desktop file
     fi
-    record dir "$D_OPT/versions"
+    [[ -n $APPDIR_SRC ]] && record dir "$D_OPT/versions"
 
     # the `mstsc` command
     put_link "$launcher" "$D_BIN/mstsc"
@@ -162,11 +171,14 @@ cmd_install() {
     rm -f "$tmp"
 
     # write the manifest: everything owned now, plus older entries still present
+    # (no pipelines or trailing `&&` in the loop: under pipefail/set -e either one ends the
+    # script before the rename when the last old entry no longer exists)
     local e p
+    declare -A NOW=()
+    for e in "${NEWMAN[@]}"; do NOW[${e#*$'\t'}]=1; done
     { printf '%s\n' "${NEWMAN[@]}"
       for p in "${!OWNED[@]}"; do
-          printf '%s\n' "${NEWMAN[@]}" | cut -f2 | grep -qxF "$p" && continue
-          [[ -e $p || -L $p ]] && printf '%s\t%s\n' "${OWNED[$p]}" "$p"
+          if [[ -z ${NOW[$p]:-} ]] && [[ -e $p || -L $p ]]; then printf '%s\t%s\n' "${OWNED[$p]}" "$p"; fi
       done
     } | sort -u > "$MANIFEST.tmp"
     mv -f "$MANIFEST.tmp" "$MANIFEST"
@@ -233,5 +245,5 @@ case $cmd in
     install) cmd_install;;
     uninstall) cmd_uninstall;;
     status) cmd_status;;
-    *) sed -n '2,26p' "$0"; exit 2;;
+    *) sed -n '2,27p' "$0"; exit 2;;
 esac

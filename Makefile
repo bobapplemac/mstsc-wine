@@ -31,23 +31,25 @@ GNUTLS_OUT := $(B)/install-gnutls/gnutls-build-info.txt
 NTLM_OUT   := $(B)/stage/samba/bin/ntlm_auth.bin
 
 .PHONY: all verify-components wine gnutls ntlm appdir appimage package test test-portability doctor \
-        install uninstall integrate-appimage clean distclean help check-engine
+        install install-appdir uninstall clean distclean help check-engine
 
-all: verify-components appdir
+all: verify-components appimage
 
 help:
 	@echo 'MSTSC-Wine build (docs/PACKAGING.md)'
 	@echo
-	@echo '  make                    validate your component ZIP and build the AppDir ($(APPDIR))'
+	@echo '  make                    validate your component ZIP, build the AppDir and the AppImage'
 	@echo '  make verify-components  check the ZIP (structure, policy, one Windows build, SHA-256)'
 	@echo '  make wine|gnutls|ntlm   build one open-source part (pinned Wine + patches, patched GnuTLS,'
 	@echo '                          private Samba ntlm_auth)'
 	@echo '  make appdir             assemble the relocatable AppDir'
-	@echo '  make appimage           single-file AppImage ($(APPIMAGE)); local only'
+	@echo '  make appimage           only the AppImage step ($(APPIMAGE)); local only'
 	@echo '  make package            relocatable tarball ($(TARBALL))'
 	@echo '  make test               regression and packaging tests'
 	@echo '  make doctor             check the AppDir and this system'
-	@echo '  make install            install for this user (~/.local/opt, menu entry, ~/.local/bin/mstsc)'
+	@echo '  make install            build, then install the AppImage for this user (~/.local/opt,'
+	@echo '                          menu entry, ~/.local/bin/mstsc)'
+	@echo '  make install-appdir     install the unpacked AppDir instead (development, or no FUSE)'
 	@echo '  make uninstall          remove what install created; keeps your settings (PURGE=1 removes them)'
 	@echo '  make clean              remove packaging outputs (keeps your ZIP, settings and dev builds)'
 	@echo
@@ -131,15 +133,20 @@ test-portability:
 doctor:
 	$(APPDIR)/AppRun doctor
 
-install:
-	@[[ -x $(APPDIR)/AppRun ]] || { echo "error: no AppDir at $(APPDIR); run make first" >&2; exit 1; }
+# The AppImage is what gets installed (ADR-0049); it is rebuilt first, so an install after
+# `git pull` never installs a stale build. --integrate runs inside the mounted AppImage.
+install: all
+	@$(APPIMAGE) --version >/dev/null 2>&1 || { \
+	  echo "error: $(APPIMAGE) does not start here (FUSE missing? Debian: apt install fuse3)." >&2; \
+	  echo "  Install the unpacked AppDir instead: make install-appdir" >&2; exit 1; }
+	$(APPIMAGE) --integrate $(if $(MIME),--mime)
+
+# Development, or a machine without FUSE: install a versioned copy of the AppDir.
+install-appdir: verify-components appdir
 	$(APPDIR)/usr/lib/mstsc-wine/integrate.sh install --appdir $(APPDIR) $(if $(MIME),--mime)
 
 uninstall:
 	@MSTSC_WINE_PURGE_HINT='make uninstall PURGE=1' $(ROOT)/packaging/integrate.sh uninstall $(if $(PURGE),--purge)
-
-integrate-appimage:
-	$(ROOT)/packaging/integrate.sh install --appimage $(APPIMAGE)
 
 clean:
 	rm -rf $(ROOT)/build/docker $(ROOT)/build/native $(ROOT)/build/test-shim $(APPDIR) $(APPDIR).tmp $(APPIMAGE) $(TARBALL) \

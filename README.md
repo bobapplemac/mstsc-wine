@@ -19,7 +19,8 @@ What works with the genuine client:
 - A self-contained, relocatable package built locally from source and your own Microsoft
   files: AppDir, single-file AppImage and `.tar.zst`. It brings its own Wine, patched
   GnuTLS, Kerberos and NTLM helper, and needs no Wine, Samba or Winbind on the machine.
-  `make install` adds a "Remote Desktop Connection" menu entry and the `mstsc` command
+  `make install` installs the AppImage with a "Remote Desktop Connection" menu entry and the
+  `mstsc` command
   ([docs/PACKAGING.md](docs/PACKAGING.md)).
 
 Not done or not yet tested:
@@ -64,11 +65,13 @@ Then build and run:
 ```bash
 git clone https://github.com/bobapplemac/mstsc-wine.git && cd mstsc-wine
 cp /path/to/mstsc-components-*.zip private-input/
-make                      # Docker build of the runtime + assembly → artifacts/MSTSC-Wine.AppDir
-make appimage             # → artifacts/mstsc-wine-x86_64.AppImage
+make                      # Docker build of the runtime → artifacts/mstsc-wine-x86_64.AppImage
 ./artifacts/mstsc-wine-x86_64.AppImage /v:server01
-make install              # menu entry "Remote Desktop Connection" and ~/.local/bin/mstsc
+make install              # installs the AppImage: menu entry "Remote Desktop Connection"
+                          # and ~/.local/bin/mstsc
 ```
+
+To update later: `git pull`, then `make install` (it rebuilds first).
 
 The first build takes 20–40 minutes; later builds are incremental. Details, options, the extra
 packages for `make test`, install and uninstall, and diagnostics:

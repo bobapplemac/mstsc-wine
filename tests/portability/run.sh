@@ -157,6 +157,8 @@ if [[ -n $APPIMAGE && -f $APPIMAGE ]]; then
         [[ -f '$VT/xdg-e/data/mstsc-wine/prefix/.mstsc-wine-state' ]] && env $(xdg "$VT/xdg-e") '$APPIMAGE' doctor"
     check PKG-010 "AppImage without FUSE: --appimage-extract-and-run" bash -c "
         cd '$VT' && env $(xdg "$VT/xdg-e") APPIMAGE_EXTRACT_AND_RUN=1 '$APPIMAGE' --version | grep -q 'mstsc-wine'"
+    check PKG-017 "make install (the AppImage): exposes mstsc, switches from/to an AppDir install, uninstall keeps user data" \
+        "$ROOT/tests/portability/test-install.sh" appimage "$APPIMAGE"
     check PKG-024 "AppImage --integrate/--unintegrate in a throwaway HOME, idempotent, no AppImageLauncher" \
         "$ROOT/tests/portability/test-install.sh" appimage "$APPIMAGE"
 else
@@ -171,7 +173,7 @@ else
 fi
 
 # ------------------------------------------------------------------ installation
-check PKG-017 "make install exposes mstsc; uninstall removes only owned files, keeps user data" \
+check PKG-017 "make install-appdir exposes mstsc; uninstall removes only owned files, keeps user data" \
     "$ROOT/tests/portability/test-install.sh" appdir "$APPDIR"
 res PKG-001 SKIP "fresh-checkout build: run tests/portability/test-fresh-build.sh (long; Docker)"
 res PKG-021 SKIP "menu entry rendering under Cinnamon/KDE: manual (docs/PACKAGING.md checklist)"

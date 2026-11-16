@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-15_
+_Last updated: 2026-11-16_
 
 ## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 ## Packaging (docs/MSTSC-Wine-Packaging-Implementation-Spec.md v1.1): P0–P6 implemented (2026-11-15)
@@ -13,7 +13,7 @@ _Last updated: 2026-11-15_
 | P3 Microsoft input | **done**: `windows/Export-MstscComponents.ps1` (first successful run on Windows reported by the operator, EXP-063), `tools/mscomponents.py` verify/extract/from-dir/icon, policy file, Git hygiene (ADR-0046) |
 | P4 reproducible build | **done**: pinned Debian 13 Docker image (digest + snapshot.debian.org), native engine, `Makefile` (ADR-0045); Docker and native builds produce the same Wine source tree and library set |
 | P5 canonical AppDir | **done**: `tools/assemble-appdir.sh`, first-run prefix set-up under a lock with state marker and registry backups, `doctor`, metadata (ADR-0043) |
-| P6 deliverables | **done**: AppImage (100 MB), `.tar.zst` (65 MB), install/uninstall/`--integrate` with manifest (ADR-0047) |
+| P6 deliverables | **done**: AppImage (100 MB), `.tar.zst` (65 MB), install/uninstall/`--integrate` with manifest (ADR-0047); `make` builds the AppImage and `make install` installs it, `make install-appdir` for development (ADR-0049) |
 | P7 quality and handoff | **in progress**: release gates 25/0/4 (`tests/portability/run.sh`); exporter verified on Server 2022 (EXP-063); **fresh Debian 13 KDE Plasma (X11) machine: built from a fresh clone and runs (EXP-064)**. Open: KDE Plasma on Wayland, and a recorded checklist of live-host checks from the package (docs/PACKAGING.md §8) |
 
 | Milestone | State |

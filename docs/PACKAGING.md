@@ -82,8 +82,8 @@ Then:
 git clone <repository-url> mstsc-wine
 cd mstsc-wine
 cp /path/to/mstsc-components-*.zip private-input/     # or: make MICROSOFT_COMPONENTS=/path/to/zip
-make                                                  # → artifacts/MSTSC-Wine.AppDir
-make appimage                                         # → artifacts/mstsc-wine-x86_64.AppImage
+make                                                  # → artifacts/MSTSC-Wine.AppDir and
+                                                      #   artifacts/mstsc-wine-x86_64.AppImage
 ```
 
 - **Build engine.** `make` compiles Wine, GnuTLS and the NTLM helper in a pinned Debian 13
@@ -94,7 +94,7 @@ make appimage                                         # → artifacts/mstsc-wine
   - The first build downloads sources and takes 15–30 minutes. Later builds are incremental.
 - **What stays local.** Your ZIP is read only on the host, in the assembly step. It never
   enters a container, an image or a cache that could be published.
-- **Host tools.** `make appimage` needs `squashfs-tools`, and `make package` needs `zstd`.
+- **Host tools.** `make` needs `squashfs-tools` for the AppImage, and `make package` needs `zstd`.
 - **Other targets.** `make verify-components`, `make package` (`.tar.zst` of the AppDir),
   `make test`, `make doctor`, `make help`.
 
@@ -118,11 +118,18 @@ the launcher's.
 ## 4. Install (menu entry and `mstsc` command)
 
 ```bash
-make install            # from the AppDir: ~/.local/opt/mstsc-wine, ~/.local/bin/mstsc,
-                        # menu entry "Remote Desktop Connection" with the mstsc icon
-./artifacts/mstsc-wine-x86_64.AppImage --integrate      # or: integrate the AppImage itself
+make install            # rebuilds, then installs the AppImage: ~/.local/opt/mstsc-wine,
+                        # ~/.local/bin/mstsc, menu entry "Remote Desktop Connection"
+./artifacts/mstsc-wine-x86_64.AppImage --integrate      # the same, from a copied AppImage
+make install-appdir     # development, or no FUSE: install the unpacked AppDir instead
 ```
 
+- **Updating.** `git pull`, then `make install`. It always rebuilds first, so it never
+  installs a stale build. The installed AppImage is replaced atomically. Switching between
+  `make install` and `make install-appdir` replaces the other kind of installation
+  (ADR-0049).
+- **No FUSE.** `make install` checks that the AppImage starts and, if not, says to install
+  `fuse3` or use `make install-appdir`.
 - **Uninstall.** `make uninstall` (or `mstsc --unintegrate`) removes exactly what was
   installed. Your settings, saved credentials and logs stay; `make uninstall PURGE=1` (or
   `mstsc --unintegrate --purge`) removes them too, also after the application was already

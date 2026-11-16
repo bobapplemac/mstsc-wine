@@ -1,6 +1,7 @@
 # ADR-0047: Installation, desktop integration and the AppImage
 
-- Status: accepted. 2026-11-15.
+- Status: accepted. 2026-11-15. Amended by ADR-0049: `make` also builds the AppImage, and
+  `make install` installs it (the AppDir install below is now `make install-appdir`).
 - AppImage (`make appimage`): the AppImage type 2 runtime (release `20251108`, SHA-256
   pinned) followed by a SquashFS of the AppDir (zstd, root-owned, fixed timestamps).
   - Built directly with Debian's `mksquashfs` (the AppImage file format), so appimagetool

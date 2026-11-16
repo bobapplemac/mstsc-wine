@@ -72,6 +72,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-064 | 2026-11-15 | fresh clone of `main` (`8cae32d`), exporter ZIP from Server 2022 build 20348.5870 | Second machine: fresh Debian 13, **KDE Plasma on X11**. README quick start (apt prerequisites, `make`, AppImage) with the ZIP made by `irm … \| iex` (EXP-063) | **Full success** (operator): the package builds and the genuine mstsc runs. Found on the way: `private-input/` was missing from fresh clones (fixed in `8cae32d`). KDE Plasma on **Wayland** (XWayland) is still untested |
 | EXP-065 | 2026-11-15 | package (0001–0039) and bisect runtimes 0015, 0035-reverted | Operator: no certificate warning over NLA, connecting by IP to Windows Server 2025 (local account), though genuine Windows mstsc warns for that server. Reproduced live against the domain RDP host by IP and the EXP-031 test VM (both `HYBRID_EX`), and offline (`fake-rdp-credssp.py`, by IP and by name) | Our CredSSP returned flags 0 and an untrusted chain correctly, but `SEC_E_OK` + `ISC_RET_MUTUAL_AUTH`. mstsc only warns on `SEC_E_MUTUAL_AUTH_FAILED` (disassembly). Not a regression: the 0015 runtime and a copy of the EXP-031 prefix behave the same. **Fixed by patch 0040** (ADR-0048): offline, the genuine warning appears before delegation; "Yes" reconnects with `0xc11d` and delegates; Kerberos sets flags `0x1` (no warning) |
 | EXP-066 | 2026-11-16 | AppImage with 0001–0040 | Live, EXP-031 test VM by IP, fresh profile (operator signed in) | **Genuine certificate warning before the session**, as on Windows (operator: "looked correct"). Trace: first attempt refused before delegation, trust status queried. "No": no second connection, nothing delegated. "Yes": reconnect with `0xc11d`, CredSSP completes, desktop (operator-confirmed) |
+| EXP-067 | 2026-11-16 | package with ADR-0049 | `make install` now installs the AppImage; tested in throwaway HOMEs: `make install`, `make install-appdir`, then `make install` again, `make uninstall` | Works; one installation at a time. Found an intermittent installer bug (manifest left as `.tmp` when the last old entry was gone), fixed; `test-install.sh appimage` 8/8 |
 
 ## Reproducible tests
 
@@ -103,7 +104,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | Packaging release gates | `tests/portability/run.sh APPDIR [APPIMAGE [TARBALL]]` (`make test`): PASS/FAIL/SKIP per PKG-ID | packaging spec §9 |
 | Regression suite on a package | `tests/portability/runtime-shim.sh APPRUN OUT && tests/run-regression.sh OUT patched` | the packaged runtime runs every fixture |
 | Component bundles | `tests/portability/test-component-bundle.sh` (needs the operator ZIP) | PKG-012 |
-| Install / integrate | `tests/portability/test-install.sh appdir APPDIR` / `appimage APPIMAGE` (throwaway HOME) | PKG-017, 021, 023–025 |
+| Install / integrate | `tests/portability/test-install.sh appdir APPDIR` (`make install-appdir`) / `appimage APPIMAGE` (`make install`, mode switches) (throwaway HOME) | PKG-017, 021, 023–025 |
 | Private NTLM | `tests/portability/test-private-ntlm.sh APPRUN` (bwrap hides host Samba, decoy on PATH) | PKG-005 |
 | Fresh checkout build | `tests/portability/test-fresh-build.sh [DOCKER='sudo docker']` (~20 min) | PKG-001 |
 
