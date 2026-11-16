@@ -2,7 +2,23 @@
 
 The operator supplies Microsoft files from a licensed Windows installation they control.
 The project never downloads them and never commits them (`.gitignore` blocks `*.exe`,
-`*.dll`, `*.mui`, …). Copy all files from **one** machine/build. Do not mix builds.
+`*.dll`, `*.mui`, `*.zip`, `private-input/`, …). Copy all files from **one** machine/build. Do not mix builds.
+
+## Recommended: the exporter (packaging)
+
+Run `windows/Export-MstscComponents.ps1` on the Windows machine (64-bit PowerShell, no
+admin rights). It writes `mstsc-components-<build>-amd64.zip` with exactly the files below
+plus a `manifest.json` (file versions, SHA-256). Put the ZIP in `private-input/` (or pass
+`MICROSOFT_COMPONENTS=/path/to/zip`) and run `make`. `make verify-components` checks it:
+one Windows build, allowed files only (`packaging/components-policy.json`), hashes and
+versions matching. Details: [PACKAGING.md](PACKAGING.md), ADR-0046.
+
+The ZIP and every artifact built from it are private: they contain Microsoft's files.
+Whether your licence allows copying them, running them on Linux and including them in your
+local package is for you to check. The project grants no rights to them.
+
+The manual folder layout below still works for development (`launcher/mstsc-wine import`),
+and `tools/mscomponents.py from-dir FOLDER OUT.zip` turns such a folder into the ZIP.
 
 ## Current set: Windows Server 2022, build 10.0.20348.5866
 
@@ -16,7 +32,7 @@ Copy from `C:\Windows\System32\`, keeping the `en-US` sub-folder:
 | `en-US\mstscax.dll.mui` | supplied | mstscax strings/dialogs and its COM registration scripts |
 | `dui70.dll` (+ `en-US\dui70.dll.mui` if it exists) | recommended | 133 DirectUI functions delay-loaded by mstscax; no Wine equivalent |
 | `duser.dll` (+ `en-US\duser.dll.mui` if it exists) | recommended | DirectUI dependency, delay-loaded by mstscax |
-| `devobj.dll` | optional | A/B diagnostics only; the runtime ships its own (ADR-0004) |
+| `devobj.dll` | optional | A/B diagnostics only; the runtime ships its own (ADR-0004). Not part of the exported ZIP |
 
 ### Also needed (2026-11-14)
 

@@ -19,3 +19,16 @@ __pycache__/
 *.mun
 *.ttf
 *.ttc
+# Private operator input and generated, possibly Microsoft-containing outputs (packaging spec §2.8)
+/private-input/
+*.zip
+*.ZIP
+*.mun
+*.ico
+*.AppImage
+*.tar.zst
+/dist/
+/MSTSC-Wine.AppDir/
+*.AppDir/
+# Exported component bundles if saved elsewhere in the tree
+mstsc-components-*

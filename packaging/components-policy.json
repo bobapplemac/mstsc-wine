@@ -1,0 +1,35 @@
+{
+ "_comment": "Microsoft files an mstsc-wine component bundle may contain (ADR-0046). Paths are relative to C:\\Windows; <lang> is the display language folder (e.g. en-US). Anything not listed is rejected. Keep in sync with windows/Export-MstscComponents.ps1.",
+ "verified_builds": ["20348"],
+ "experimental_builds": ["17763", "19041", "19042", "19043", "19044", "19045", "22000", "22621", "22631", "26100"],
+ "required": [
+  "System32/mstsc.exe",
+  "System32/mstscax.dll",
+  "System32/<lang>/mstsc.exe.mui",
+  "System32/<lang>/mstscax.dll.mui",
+  "SystemResources/mstsc.exe.mun"
+ ],
+ "recommended": [
+  "SystemResources/mstscax.dll.mun",
+  "System32/dui70.dll",
+  "System32/<lang>/dui70.dll.mui",
+  "System32/duser.dll",
+  "System32/<lang>/duser.dll.mui",
+  "Fonts/segoeui.ttf",
+  "Fonts/segoeuib.ttf",
+  "Fonts/segoeuii.ttf",
+  "Fonts/segoeuiz.ttf",
+  "Fonts/segoeuil.ttf",
+  "Fonts/seguisb.ttf",
+  "Fonts/seguisym.ttf",
+  "Fonts/segmdl2.ttf",
+  "Fonts/tahoma.ttf",
+  "Fonts/tahomabd.ttf",
+  "Fonts/micross.ttf"
+ ],
+ "excluded": {
+  "System32/devobj.dll": "the runtime's builtin devobj replaces it (ADR-0004)",
+  "System32/credssp.dll": "Wine's builtin CredSSP is used; the native one needs LSA infrastructure (ADR-0018)",
+  "System32/tspkg.dll": "same as credssp.dll (ADR-0018)"
+ }
+}
