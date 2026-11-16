@@ -47,9 +47,22 @@ only the files mstsc-wine needs and uploads nothing. It runs the current `main` 
 read it first, or to use a tagged version, see
 [docs/PACKAGING.md](docs/PACKAGING.md#1-export-your-microsoft-files-on-windows).
 
-Then on Debian 13:
+Then on Debian 13, install the build prerequisites once:
 
 ```bash
+sudo apt install git make python3 curl ca-certificates squashfs-tools zstd fuse3 desktop-file-utils docker.io
+```
+
+The build runs in Docker. Either add yourself to the `docker` group (`sudo usermod -aG docker $USER`,
+then log out and in; the group is equivalent to root access), or add `DOCKER='sudo docker'` to
+each `make` command below. Without Docker, `make BUILD_ENGINE=native` builds directly on the
+host; it needs the packages in [packaging/build-deps.txt](packaging/build-deps.txt)
+(`sudo apt install $(grep -v '^#' packaging/build-deps.txt)`).
+
+Then build and run:
+
+```bash
+git clone https://github.com/bobapplemac/mstsc-wine.git && cd mstsc-wine
 cp /path/to/mstsc-components-*.zip private-input/
 make                      # Docker build of the runtime + assembly → artifacts/MSTSC-Wine.AppDir
 make appimage             # → artifacts/mstsc-wine-x86_64.AppImage
@@ -57,8 +70,9 @@ make appimage             # → artifacts/mstsc-wine-x86_64.AppImage
 make install              # menu entry "Remote Desktop Connection" and ~/.local/bin/mstsc
 ```
 
-Details, options (`BUILD_ENGINE=native`, `DOCKER='sudo docker'`), install and uninstall,
-diagnostics: [docs/PACKAGING.md](docs/PACKAGING.md).
+The first build takes 20–40 minutes; later builds are incremental. Details, options, the extra
+packages for `make test`, install and uninstall, and diagnostics:
+[docs/PACKAGING.md](docs/PACKAGING.md).
 
 ## Quick start (development)
 

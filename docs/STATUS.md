@@ -10,7 +10,7 @@ _Last updated: 2026-11-15_
 | P0 baseline | **done**: both regression runs and the launch tests pass at `835c919` (EXP-056) |
 | P1 relocatability | **done**: Wine is relocatable as built (R-027); neutral-prefix `dist` build; launcher finds the AppDir from its own location; runs from paths with spaces/`Ä`, read-only, source tree hidden (EXP-057) |
 | P2 dependency closure | **done**: patched GnuTLS, MIT Kerberos, libunwind and Samba `ntlm_auth` (86 libraries) bundled from pinned, hash-checked Debian 13 inputs; patch 0039 `WINENTLMAUTH` (ADR-0042, ADR-0044); NTLM CredSSP verified offline with host Samba hidden (PKG-005) |
-| P3 Microsoft input | **done**: `windows/Export-MstscComponents.ps1` (not yet run on Windows), `tools/mscomponents.py` verify/extract/from-dir/icon, policy file, Git hygiene (ADR-0046) |
+| P3 Microsoft input | **done**: `windows/Export-MstscComponents.ps1` (first successful run on Windows reported by the operator, EXP-063), `tools/mscomponents.py` verify/extract/from-dir/icon, policy file, Git hygiene (ADR-0046) |
 | P4 reproducible build | **done**: pinned Debian 13 Docker image (digest + snapshot.debian.org), native engine, `Makefile` (ADR-0045); Docker and native builds produce the same Wine source tree and library set |
 | P5 canonical AppDir | **done**: `tools/assemble-appdir.sh`, first-run prefix set-up under a lock with state marker and registry backups, `doctor`, metadata (ADR-0043) |
 | P6 deliverables | **done**: AppImage (100 MB), `.tar.zst` (65 MB), install/uninstall/`--integrate` with manifest (ADR-0047) |

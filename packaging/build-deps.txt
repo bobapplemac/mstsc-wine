@@ -1,8 +1,13 @@
-# Debian 13 packages needed to build the runtime (operator installs with apt):
-flex bison gcc-mingw-w64-x86-64 autoconf
+# Debian 13 packages for a native build (make BUILD_ENGINE=native). The same list as
+# docker/Dockerfile; keep the two in sync. Install with:
+#   sudo apt install $(grep -v '^#' packaging/build-deps.txt)
+ca-certificates curl git file binutils make gcc g++ gcc-mingw-w64-x86-64
+flex bison autoconf automake libtool autopoint gettext pkgconf python3 xz-utils patch
 libx11-dev libxext-dev libxrender-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev
 libxcomposite-dev libxfixes-dev libxxf86vm-dev libfreetype-dev libfontconfig-dev
-libgnutls28-dev libkrb5-dev libpulse-dev libasound2-dev libdbus-1-dev libudev-dev
-libvulkan-dev libgl-dev libegl-dev libwayland-dev libxkbcommon-dev wayland-protocols
-libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libcups2-dev libpcsclite-dev
-libunwind-dev libsdl2-dev libusb-1.0-0-dev
+libgnutls28-dev libkrb5-dev libpulse-dev libasound2-dev libudev-dev libusb-1.0-0-dev
+libpcsclite-dev libunwind-dev libvulkan-dev libgl-dev libegl-dev libsdl2-dev libcups2-dev
+libv4l-dev
+nettle-dev libgmp-dev libtasn1-6-dev libidn2-dev libunistring-dev libp11-kit-dev
+# for make appimage / make package
+squashfs-tools zstd
