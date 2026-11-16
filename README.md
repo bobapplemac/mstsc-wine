@@ -16,17 +16,37 @@ What works with the genuine client:
 - Fullscreen, Restore and Maximize.
 - Clipboard redirection: text, files and pictures, in both directions.
 
+- A self-contained, relocatable package built locally from source and your own Microsoft
+  files: AppDir, single-file AppImage and `.tar.zst`. It brings its own Wine, patched
+  GnuTLS, Kerberos and NTLM helper, and needs no Wine, Samba or Winbind on the machine.
+  `make install` adds a "Remote Desktop Connection" menu entry and the `mstsc` command
+  ([docs/PACKAGING.md](docs/PACKAGING.md)).
+
 Not done or not yet tested:
 - KDE Plasma on Wayland (the spec's primary target): tested so far only on Cinnamon (X11).
 - Servers that *require* NLA.
 - Kerberos with a NetBIOS domain name (`DOMAIN\user` falls back to NTLM).
 - Copying folder trees through the clipboard, and two sessions at once.
-- Packaging.
+- The package on a second, clean Debian 13 machine (checklist in docs/PACKAGING.md §8).
 
 - Authoritative spec: [docs/MSTSC-Wine-Master-Specification.md](docs/MSTSC-Wine-Master-Specification.md)
 - Microsoft files you must supply: [docs/binary-acquisition.md](docs/binary-acquisition.md)
 - Findings / experiments / decisions: [docs/RESEARCH.md](docs/RESEARCH.md),
   [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), [docs/DECISIONS/](docs/DECISIONS/)
+
+## Quick start (package)
+
+```bash
+# On Windows: windows/Export-MstscComponents.ps1 → mstsc-components-<build>-amd64.zip
+cp /path/to/mstsc-components-*.zip private-input/
+make                      # Docker build of the runtime + assembly → artifacts/MSTSC-Wine.AppDir
+make appimage             # → artifacts/mstsc-wine-x86_64.AppImage
+./artifacts/mstsc-wine-x86_64.AppImage /v:server01
+make install              # menu entry "Remote Desktop Connection" and ~/.local/bin/mstsc
+```
+
+Details, options (`BUILD_ENGINE=native`, `DOCKER='sudo docker'`), install and uninstall,
+diagnostics: [docs/PACKAGING.md](docs/PACKAGING.md).
 
 ## Quick start (development)
 
@@ -42,7 +62,8 @@ tests/run-regression.sh build/install-wine-patched patched
 ## Assumptions (explicit)
 - x86-64 only; both supplied binaries are x86-64, so the build uses `--enable-archs=x86_64`.
 - XWayland/X11 (winex11) first; native Wayland is a later experiment.
-- Microsoft binaries are never committed, packaged or downloaded by this project.
+- Microsoft binaries are never committed, published or downloaded by this project. They go
+  only into the private artifacts *you* build from your own files (see below).
 - The Wine prefix is an isolation boundary for *configuration*, not a security sandbox.
 
 ## License
@@ -63,12 +84,21 @@ tests/run-regression.sh build/install-wine-patched patched
 
 ### Microsoft files
 
-This project contains no Microsoft software and never downloads or redistributes any.
-You must supply `mstsc.exe`, `mstscax.dll`, their MUI files, fonts and any other Microsoft
-files yourself, from a Windows installation you are licensed to use. It is your
-responsibility to make sure your license permits using those files this way (see
-[docs/binary-acquisition.md](docs/binary-acquisition.md)). Nothing in this repository
-grants any rights to Microsoft software.
+- **The public repository and anything the project publishes** (source, releases, CI
+  results, container images) contain no Microsoft software. The project never downloads or
+  redistributes any.
+- **What you build yourself** (AppDir, AppImage, tarball, installation) *does* contain the
+  Microsoft files you supplied. You export `mstsc.exe`, `mstscax.dll`, their MUI files,
+  `.mun` resources and fonts from a Windows installation you are licensed to use
+  (`windows/Export-MstscComponents.ps1`, [docs/binary-acquisition.md](docs/binary-acquisition.md)),
+  and `make` copies them into your local artifact. That artifact is private: do not
+  publish or share it.
+- **Your licence is your responsibility.** Check that your Microsoft licence allows
+  extracting these files, running them on Linux and including them in your locally built
+  package. Not redistributing them does not, by itself, make that use compliant. Windows
+  Server terms in particular may restrict running its components on another operating
+  system. Nothing in this repository grants any rights to Microsoft software or bypasses
+  its licensing, activation or security controls.
 
 Microsoft, Windows and Remote Desktop are trademarks of Microsoft Corporation. This
 project is not affiliated with or endorsed by Microsoft.

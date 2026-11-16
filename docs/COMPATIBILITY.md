@@ -62,6 +62,10 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-054 | 2026-11-15 | 0001–0038 | `tests/launch/test-clipboard.sh` (genuine mstsc, offline) | 15/15: Unicode multi-line text both ways; two files (300 kB binary + Unicode name) local → remote; a 200 kB file remote → local via FileContents ranges, through `text/uri-list` and `x-special/gnome-copied-files`; a picture both ways. Notes: Wine imports one X11 copy twice (SelectionClear + XFixes), so mstsc announces it twice (harmless; follow-up). Local → remote files needed no Wine change. The test server must lock the client data before FileContents requests, as rdpclip does |
 | EXP-055 | 2026-11-15 | 0001–0038 | Genuine mstsc on the real Cinnamon desktop against a real Windows host (operator) | Text and files copied successfully in both directions. Not every scenario was tried (pictures, directory trees, two sessions still open) |
 | EXP-056 | 2026-11-15 | 11.0 and 0001–0038 (`835c919`) | Packaging P0 baseline: `tests/run-regression.sh` on both runtimes, `tests/launch/*.sh` (Xephyr :5, dev env `artifacts/dev-patched.env`) | Baseline: 0 unexpected. Patched: 1 unexpected on the first run (`winex11: leaving fullscreen releases the pointer grab`), PASS on immediate rerun: a timing flake (own Xephyr `:9` + metacity), not a regression. Launch: clipboard 15/15, fullscreen-restore, launcher isolation PASS; connect-invalid PASS with the dev env (without it, it runs against the empty default prefix and fails, as designed) |
+| EXP-057 | 2026-11-15 | 0001–0039, `dist` build (native and Docker) | Packaged AppDir copied to `/var/tmp/…/two with space/Ä`, made read-only, source tree hidden with bwrap, all `WINE*` variables pointing elsewhere: `doctor`, `exec`, genuine mstsc (`/v:rdp-test.invalid`, relative `my file.rdp`) | All work. State only under XDG directories. The launcher's own `WINESERVER` variable was wiped by the `WINE*` sanitising when the caller exported `WINESERVER`: fixed (internal names `RT_WINE*`) |
+| EXP-058 | 2026-11-15 | same | Genuine mstsc from the AppImage in Xephyr; `xprop` on its main window | Dialog renders as with the development runtime (banner, fonts, chevron); `WM_CLASS "mstsc.exe", "mstsc.exe"` → `StartupWMClass=mstsc.exe` |
+| EXP-059 | 2026-11-15 | Docker-built AppDir (image `mstsc-wine-build:b0644021ab35`) | `tests/run-regression.sh` through `tests/portability/runtime-shim.sh` | **0 unexpected**: MUI/.mun, Schannel with the bundled patched GnuTLS, CredSSP/NTLM through the bundled helper, Kerberos (offline MIT realm), credui, fullscreen grab, dialog layout, OLE clipboard. Same Wine source tree hash (`07aaa59…`) and library set as the native build; only the mingw threading flavour differs (`win32` vs `posix`) |
+| EXP-060 | 2026-11-15 | native-built AppDir, AppImage (100 MB), `.tar.zst` (65 MB) | `tests/portability/run.sh` | **24 PASS, 0 FAIL, 5 SKIP**. The SKIPs are PKG-001, PKG-016, PKG-021, PKG-023 and PKG-025, listed with their separate or manual procedures. Host had winbind running and Docker installed; both were hidden for PKG-005/013 |
 
 ## Reproducible tests
 
@@ -89,6 +93,13 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | Clipboard (genuine mstsc) | `tests/launch/test-clipboard.sh [PREFIX] [RUNTIME]` (own Xephyr `:8`, Xvfb `:9`; needs freerdp3-dev, xclip, python3-xlib, python3-gi): text, files and pictures both ways against `tests/clipboard/server/cliprdr-shadow.c` | patches 0032–0038 |
 | Wrong password re-prompt | `tests/static/credssp-client/run.sh` (last status check); `tests/security/credssp/run.sh` phase 3 with the genuine mstsc | patch 0019 |
 | mstscax probe (needs registration) | `wine cscript //nologo tests/launch/probe-mstscax.js` | ProgID activation, `Version` |
+| NTLM helper selection | `tests/static/ntlm-helper/run.sh WINE CSSP` (regression suite) | patch 0039 |
+| Packaging release gates | `tests/portability/run.sh APPDIR [APPIMAGE [TARBALL]]` (`make test`): PASS/FAIL/SKIP per PKG-ID | packaging spec §9 |
+| Regression suite on a package | `tests/portability/runtime-shim.sh APPRUN OUT && tests/run-regression.sh OUT patched` | the packaged runtime runs every fixture |
+| Component bundles | `tests/portability/test-component-bundle.sh` (needs the operator ZIP) | PKG-012 |
+| Install / integrate | `tests/portability/test-install.sh appdir APPDIR` / `appimage APPIMAGE` (throwaway HOME) | PKG-017, 021, 023–025 |
+| Private NTLM | `tests/portability/test-private-ntlm.sh APPRUN` (bwrap hides host Samba, decoy on PATH) | PKG-005 |
+| Fresh checkout build | `tests/portability/test-fresh-build.sh [DOCKER='sudo docker']` (~20 min) | PKG-001 |
 
 ## Phase 1 acceptance status (T-001…T-021)
 

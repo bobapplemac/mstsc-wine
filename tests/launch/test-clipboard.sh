@@ -1,8 +1,10 @@
 #!/bin/bash
 # Genuine mstsc: clipboard redirection (cliprdr) between the X11 desktop and the remote
 # session, both directions (spec F-006/F-007, T-010..T-012).
-#   test-clipboard.sh [SOURCE_PREFIX] [RUNTIME]
-#   (defaults: artifacts/prefixes/mstsc-patched, build/install-wine-patched)
+#   test-clipboard.sh [SOURCE_PREFIX] [RUNTIME] [LAUNCHER]
+#   (defaults: artifacts/prefixes/mstsc-patched, build/install-wine-patched, launcher/mstsc-wine)
+#   Packaged runtime (PKG-016): RUNTIME=<dir from tests/portability/runtime-shim.sh>,
+#   LAUNCHER=<AppDir>/AppRun or the AppImage; the package's own launcher then runs mstsc.
 # Endpoint: tests/clipboard/server/cliprdr-shadow.c, the FreeRDP shadow server with a
 # cliprdr server channel attached. Only the server side is FreeRDP; the client is the
 # genuine mstsc on Wine. The server stands in for rdpclip.exe on the remote host: it
@@ -13,6 +15,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SRC=${1:-$ROOT/artifacts/prefixes/mstsc-patched}
 RT=${2:-$ROOT/build/install-wine-patched}
+LAUNCHER=${3:-}
 OUT=$ROOT/artifacts/clipboard-test; D=:8 RD=:9 PORT=33892
 py() { PYTHONPATH=$ROOT/.deps/py python3 "$@"; }
 [[ -f $SRC/drive_c/windows/system32/mstsc.exe ]] || { echo "SKIP no mstsc prefix at $SRC"; exit 0; }
@@ -43,8 +46,15 @@ for _ in $(seq 50); do DISPLAY=$RD xdpyinfo >/dev/null 2>&1 && break; sleep 0.2;
 (cd "$OUT" && DISPLAY=$RD exec "$SRV" "$OUT/ctl" "$OUT/srv" /port:$PORT /sam-file:"$OUT/SAM" /bind-address:127.0.0.1 > "$OUT/server.log" 2>&1) & pids+=($!)
 for _ in $(seq 50); do grep -q listening "$OUT/srv/events.log" 2>/dev/null && break; sleep 0.2; done
 
+if [[ -n $LAUNCHER ]]; then
+    # the packaged launcher sets the prefix up once (new runtime): before the prompt is timed
+    DISPLAY=$D MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state "$LAUNCHER" init >/dev/null 2>&1
+    DISPLAY=$D MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state setsid \
+        "$LAUNCHER" /v:127.0.0.1:$PORT /w:1024 /h:700 >/dev/null 2>&1 &
+else
 DISPLAY=$D MSTSC_WINE_RUNTIME=$RT MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state setsid \
     "$ROOT/launcher/mstsc-wine" run /v:127.0.0.1:$PORT /w:1024 /h:700 >/dev/null 2>&1 &
+fi
 fail=0
 check() { if [[ ${2:-0} == 1 ]]; then echo "PASS $1"; else echo "FAIL $1"; fail=$((fail+1)); fi; }
 ev() { grep -c -- "$1" "$OUT/srv/events.log" 2>/dev/null; }

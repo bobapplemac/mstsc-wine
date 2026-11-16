@@ -362,3 +362,34 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   - One X11 copy is imported twice (on SelectionClear and on the XFixes notification), which produces two
     Windows clipboard updates (open).
 
+
+## R-027 Packaging: relocation, private helpers and dependency closure (V/I)
+
+- Wine 11.0 is relocatable as built (V): `ntdll.so` derives `bin_dir`/`data_dir` from its own
+  location and the compiled-in relation between `LIBDIR`, `BINDIR` and `DATADIR`
+  (`init_paths()`, `build_relative_path()`); `wineserver` is started from `bin_dir` first
+  (`exec_wineserver()`), with `WINESERVER`, `PATH` and the compiled `BINDIR` only as
+  fallbacks. A `DESTDIR` install runs from any directory, including paths with spaces and
+  non-ASCII characters (EXP-057). The configure prefix still appears in `ntdll.so` as a string
+  (fallback), so packaging builds use the neutral `/usr/lib/mstsc-wine/wine` (ADR-0043).
+- `msv1_0` runs `ntlm_auth` through `posix_spawnp` (V); patch 0039 adds `WINENTLMAUTH`.
+  Client mode (`ntlmssp-client-1` with explicit user and domain) works without winbindd: no
+  socket is opened, no Samba state is read; with `--configfile` the host `smb.conf` is not
+  read (strace, V).
+- Debian's `ntlm_auth` scans the compiled-in Samba module directory (`…/samba/gensec`, V) and
+  would `dlopen` host modules. `set_dyn_MODULESDIR()` is exported by `libsamba-util`; a
+  preloaded constructor redirects it into the bundle (V, strace shows only the private path).
+  `LD_PRELOAD` entries cannot contain spaces, so the shim is preloaded by soname and found
+  through `LD_LIBRARY_PATH` (V).
+- Closure sizes (V): GnuTLS + 8 libraries (14 MB), Kerberos + libunwind 6 libraries (1.2 MB),
+  Samba helper 86 libraries (61 MB, ICU is half). AppDir 351 MB, AppImage (zstd) 100 MB,
+  tarball (zstd -19) 65 MB.
+- Wine's only hard non-glibc `DT_NEEDED` outside winex11/audio drivers is `libunwind.so.8`
+  (`ntdll.so`, V): without it Wine does not start. `libunwind8` is not present on every
+  Debian 13 system, so it is bundled.
+- First prefix boot prints `err:ole` marshalling and `start_rpcss` messages with both the
+  development and the packaged runtime (V): normal, not a packaging defect.
+- `WM_CLASS` of the genuine mstsc main window is `"mstsc.exe", "mstsc.exe"` (V, xprop),
+  hence `StartupWMClass=mstsc.exe`.
+- The AppImage type 2 runtime (release 20251108) mounts a zstd SquashFS produced by Debian's
+  `mksquashfs` (V); appimagetool is not needed.
