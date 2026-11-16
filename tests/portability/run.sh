@@ -10,6 +10,9 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 APPDIR=$(cd "${1:?AppDir}" && pwd)
 APPIMAGE=${2:-}; [[ -n $APPIMAGE ]] && APPIMAGE=$(readlink -f "$APPIMAGE")
 TARBALL=${3:-}; [[ -n $TARBALL ]] && TARBALL=$(readlink -f "$TARBALL")
+# test the package as a user runs it: no developer overrides from the caller's shell
+# (e.g. a sourced artifacts/dev-patched.env sets MSTSC_WINE_RUNTIME and MSTSC_WINE_PREFIX)
+for v in $(compgen -e); do [[ $v == MSTSC_WINE_* ]] && unset "$v"; done
 W=$ROOT/artifacts/pkgtest; rm -rf "$W"; mkdir -p "$W"
 VT=$(mktemp -d /var/tmp/mstsc-wine-pkgtest-XXXX)   # outside the repository, on disk
 D=:7

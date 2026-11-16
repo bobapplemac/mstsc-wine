@@ -5,6 +5,7 @@
 #  - user principal name with a lower-case realm, and domain + user: Kerberos is used, the
 #    server verifies the delegated password, RDP continues (ADR-0025/0026/0027)
 #  - the user's default credential cache is not written (ADR-0028)
+#  - Kerberos authenticates the server (CREDSSP_SERVER_AUTH_NEGOTIATE): no warning (ADR-0048)
 #  - a wrong password is rejected with STATUS_LOGON_FAILURE as the last status (ADR-0022)
 W=$1 OUT=$2 PORT=${3:-44620}
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd); HERE=$ROOT/tests/security/kerberos
@@ -33,8 +34,11 @@ attempt() {   # attempt N USER DOMAIN PASSWORD -> client output; server log in O
 }
 kerberos_ok() { grep -q 'CREDSSP COMPLETE.*mechanism kerberos.*password matches' "$OUT/server-$1.log" &&
                 grep -q 'CLIENT CONTINUED' "$OUT/server-$1.log" && echo 1; }
-attempt 1 nla-test@mstsc.test '' nla-test-pass-1 >/dev/null
+out=$(attempt 1 nla-test@mstsc.test '' nla-test-pass-1)
 check "user principal name: Kerberos, password delegated" $(kerberos_ok 1)
+# Kerberos authenticates the server: no certificate warning, as on Windows (ADR-0048)
+check "Kerberos counts as server authentication (no certificate warning)" \
+    $(grep -q 'server auth flags 0x1' <<< "$out" && ! grep -q 'refused before delegation' <<< "$out" && echo 1)
 check "default credential cache left alone" $([[ -e $OUT/default-cc ]] || echo 1)
 attempt 2 nla-test mstsc.test nla-test-pass-1 >/dev/null
 check "domain + user name: Kerberos, password delegated" $(kerberos_ok 2)

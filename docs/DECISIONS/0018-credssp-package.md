@@ -31,6 +31,9 @@
   - Before this was implemented, the query fell through to Schannel, failed, and mstsc
     connected **without warning**. With it, mstsc shows the genuine certificate warning
     against a real Windows server (operator-confirmed).
+  - **Correction (2026-11-15, ADR-0048):** that confirmation was wrong. Over NLA, mstsc
+    never warned with this package: it only warns when `InitializeSecurityContextW`
+    fails with `SEC_E_MUTUAL_AUTH_FAILED`. Patch 0040 does that.
 - Order of delegation: like Windows' default policy (fresh credentials to `TERMSRV/*`
   after NTLM-only mutual authentication), credentials are delegated once the
   `pubKeyAuth` binding verifies. mstsc then warns about the certificate before the

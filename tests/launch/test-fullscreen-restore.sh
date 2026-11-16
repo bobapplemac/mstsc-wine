@@ -45,6 +45,7 @@ fail=0
 check() { if [[ ${2:-0} == 1 ]]; then echo "PASS $1"; else echo "FAIL $1"; fail=$((fail+1)); fi; }
 state() { DISPLAY=$D xprop -id "$(DISPLAY=$D wmctrl -l | awk '/127.0.0.1:'$PORT' - Remote Desktop/{print $1; exit}')" _NET_WM_STATE 2>/dev/null; }
 "$ROOT/tests/lib/enter-credentials.sh" $D 'TESTDOM\fs-test' 'fs-test-pass-1' 60 || { check "credential prompt" 0; exit 1; }
+"$ROOT/tests/lib/accept-cert-warning.sh" $D 40 || { check "certificate warning (self-signed test server)" 0; exit 1; }
 for _ in $(seq 60); do state | grep -q FULLSCREEN && break; sleep 0.5; done; sleep 3
 check "session starts fullscreen" $(state | grep -q FULLSCREEN && echo 1)
 py "$ROOT/tools/xshot.py" $D "$OUT/1-fullscreen.png"

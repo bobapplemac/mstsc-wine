@@ -1,0 +1,108 @@
+From 2ab02ffed2cf361215848e2d0e762a7a0ea99ccd Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Sun, 15 Nov 2026 23:21:25 -0500
+Subject: [PATCH] secur32: Fail CredSSP with SEC_E_MUTUAL_AUTH_FAILED for an
+ unauthenticated server.
+
+When the caller asks for mutual authentication and the server was
+authenticated neither by Kerberos nor by a trusted certificate valid for
+the host name, stop before the credentials are delegated and return
+SEC_E_MUTUAL_AUTH_FAILED, as Windows does. The Remote Desktop client reads
+SECPKG_ATTR_CERT_TRUST_STATUS on that failure, shows its certificate
+warning and, if the user accepts, connects again without asking for
+mutual authentication.
+
+A Kerberos logon now reports CREDSSP_SERVER_AUTH_NEGOTIATE, the server
+authentication flags and trust status can be queried after the failure,
+and ISC_RET_MUTUAL_AUTH is only returned when the server was authenticated.
+---
+ dlls/secur32/credssp.c | 39 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 35 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/secur32/credssp.c b/dlls/secur32/credssp.c
+index eeeea0c6..a4777513 100644
+--- a/dlls/secur32/credssp.c
++++ b/dlls/secur32/credssp.c
+@@ -745,6 +745,21 @@ static SECURITY_STATUS send_ts_request( struct credssp_ctx *ctx, const struct bl
+     return status;
+ }
+ 
++/* Kerberos authenticates the server to the client (NTLM does not): only then does the
++ * Negotiate step count as server authentication, as CREDSSP_SERVER_AUTH_NEGOTIATE. */
++static void check_nego_mutual_auth( struct credssp_ctx *ctx )
++{
++    SecPkgContext_NegotiationInfoW info;
++
++    if (QueryContextAttributesW( &ctx->nego, SECPKG_ATTR_NEGOTIATION_INFO, &info )) return;
++    if (info.PackageInfo)
++    {
++        if (!wcsicmp( info.PackageInfo->Name, L"Kerberos" )) ctx->server_auth |= CREDSSP_SERVER_AUTH_NEGOTIATE;
++        TRACE( "negotiated %s, server auth flags %#lx\n", debugstr_w(info.PackageInfo->Name), ctx->server_auth );
++        FreeContextBuffer( info.PackageInfo );
++    }
++}
++
+ /* steps the Negotiate context; *done is set when it completes */
+ static SECURITY_STATUS nego_step( struct credssp_ctx *ctx, const BYTE *in, DWORD in_len, struct blob *token )
+ {
+@@ -762,7 +777,11 @@ static SECURITY_STATUS nego_step( struct credssp_ctx *ctx, const BYTE *in, DWORD
+     TRACE( "Negotiate step: %#lx, token %lu bytes\n", status, out_buf.cbBuffer );
+     if (status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) return status;
+     ctx->nego_valid = TRUE;
+-    if (status == SEC_E_OK) ctx->nego_done = TRUE;
++    if (status == SEC_E_OK)
++    {
++        ctx->nego_done = TRUE;
++        if (attrs & ISC_RET_MUTUAL_AUTH) check_nego_mutual_auth( ctx );
++    }
+     if (out_buf.cbBuffer && out_buf.pvBuffer)
+     {
+         if ((token->data = malloc( out_buf.cbBuffer )))
+@@ -940,6 +959,17 @@ static SECURITY_STATUS process_ts_request( struct credssp_ctx *ctx, const struct
+     }
+     if (!req->pubkey_auth.len) return SEC_E_INVALID_TOKEN;
+     if ((status = check_pubkey_auth( ctx, &req->pubkey_auth ))) goto done;
++    /* As on Windows: when the caller asks for mutual authentication and neither Kerberos
++     * nor a trusted, name-matching certificate authenticated the server, stop before the
++     * credentials are delegated. The Remote Desktop client then reads the certificate
++     * trust status, warns the user and, if they accept, connects again without asking
++     * for mutual authentication. */
++    if ((ctx->req & ISC_REQ_MUTUAL_AUTH) && !ctx->server_auth)
++    {
++        TRACE( "server not authenticated, not delegating credentials\n" );
++        status = SEC_E_MUTUAL_AUTH_FAILED;
++        goto done;
++    }
+     if (!ctx_cred( ctx )->password)
+     {
+         FIXME( "no password to delegate\n" );
+@@ -1240,7 +1270,8 @@ static SECURITY_STATUS SEC_ENTRY credssp_InitializeSecurityContextW( PCredHandle
+     if (attrs)
+     {
+         *attrs = ISC_RET_CONFIDENTIALITY | ISC_RET_SEQUENCE_DETECT | ISC_RET_REPLAY_DETECT | ISC_RET_STREAM |
+-                 ISC_RET_MUTUAL_AUTH | ISC_RET_DELEGATE;
++                 ISC_RET_DELEGATE;
++        if (ctx->server_auth) *attrs |= ISC_RET_MUTUAL_AUTH;
+         if (req & ISC_REQ_ALLOCATE_MEMORY) *attrs |= ISC_RET_ALLOCATED_MEMORY;
+         if (req & ISC_REQ_EXTENDED_ERROR) *attrs |= ISC_RET_EXTENDED_ERROR;
+     }
+@@ -1283,14 +1314,14 @@ static SECURITY_STATUS SEC_ENTRY credssp_QueryContextAttributesW( PCtxtHandle ha
+     }
+     if (attr == SECPKG_ATTR_SERVER_AUTH_FLAGS)
+     {
+-        if (ctx->state != STATE_DONE) return SEC_E_INVALID_HANDLE;
++        if (!ctx->pubkey) return SEC_E_INVALID_HANDLE;  /* certificate not checked yet */
+         ((SecPkgContext_Flags *)buf)->Flags = ctx->server_auth;
+         TRACE( "server auth flags %#lx\n", ctx->server_auth );
+         return SEC_E_OK;
+     }
+     if (attr == SECPKG_ATTR_CERT_TRUST_STATUS)
+     {
+-        if (ctx->state != STATE_DONE) return SEC_E_INVALID_HANDLE;
++        if (!ctx->pubkey) return SEC_E_INVALID_HANDLE;  /* certificate not checked yet */
+         *(CERT_TRUST_STATUS *)buf = ctx->trust;
+         return SEC_E_OK;
+     }
+-- 
+2.47.3
+

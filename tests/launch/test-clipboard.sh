@@ -60,6 +60,7 @@ check() { if [[ ${2:-0} == 1 ]]; then echo "PASS $1"; else echo "FAIL $1"; fail=
 ev() { grep -c -- "$1" "$OUT/srv/events.log" 2>/dev/null; }
 waitev() { for _ in $(seq $((${2:-10} * 5))); do [[ $(ev "$1") -gt ${3:-0} ]] && return 0; sleep 0.2; done; return 1; }
 "$ROOT/tests/lib/enter-credentials.sh" $D 'TESTDOM\clip-test' 'clip-test-pass-1' 60 || { check "credential prompt" 0; exit 1; }
+"$ROOT/tests/lib/accept-cert-warning.sh" $D 40 || { check "certificate warning (self-signed test server)" 0; exit 1; }
 check "clipboard channel starts" $(waitev "client-caps" 30 && echo 1)
 waitev "client-formats" 10
 py "$ROOT/tools/xshot.py" $D "$OUT/1-session.png"

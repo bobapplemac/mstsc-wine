@@ -8,6 +8,9 @@
 #     without a prompt and CredSSP delegates the saved password (EXP-036, ADR-0020).
 #  3. A wrong password gets "Your credentials did not work" again, as on Windows, not a
 #     retry without NLA (EXP-038, ADR-0022).
+# The fake server's certificate is self-signed, so in 1 and 2 mstsc must show its genuine
+# certificate warning after the credentials and before delegating them (ADR-0048); the
+# test checks that nothing was delegated, clicks "Yes", and mstsc connects again.
 # Needs the mingw cross compiler for the seeding helper (phase 2 is skipped without it).
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd); HERE=$ROOT/tests/security/credssp
@@ -21,6 +24,15 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=localhost" \
 echo "TESTDOM:nla-test:nla-test-pass-1" > "$OUT/users"
 "$ROOT/tests/lib/xephyr.sh" start :5 || exit 1
 PORT=44490
+warned=()
+# The certificate warning: nothing may have been delegated while it is shown; then "Yes".
+accept_warning() {   # accept_warning SERVER_LOG NAME
+    PYTHONPATH=$ROOT/.deps/py python3 "$ROOT/tools/xfindwin.py" :5 'Remote Desktop Connection' 350 300 40 >/dev/null \
+        || { warned+=("$2:0"); return; }
+    if grep -q 'CREDSSP COMPLETE' "$1"; then warned+=("$2:delegated"); else warned+=("$2:1"); fi
+    PYTHONPATH=$ROOT/.deps/py python3 "$ROOT/tools/xshot.py" :5 "$OUT/$2.png" 2>/dev/null
+    "$ROOT/tests/lib/accept-cert-warning.sh" :5 5
+}
 NTLM_USER_FILE=$OUT/users FAKE_RDP_HOLD=3 "$HERE/fake-rdp-credssp.py" $PORT "$OUT/cert.pem" "$OUT/key.pem" 60 > "$OUT/server.log" 2>&1 &
 srv=$!; sleep 1
 DISPLAY=:5 MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state timeout 55 \
@@ -28,12 +40,14 @@ DISPLAY=:5 MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state timeout 55 \
 cli=$!
 fail=0
 "$ROOT/tests/lib/enter-credentials.sh" :5 'TESTDOM\nla-test' 'nla-test-pass-1' 45 || fail=1
-for _ in $(seq 40); do grep -q 'CLIENT CONTINUED\|connection ended' "$OUT/server.log" && break; sleep 0.5; done
+accept_warning "$OUT/server.log" warn1
+for _ in $(seq 40); do grep -q 'CLIENT CONTINUED' "$OUT/server.log" && break; sleep 0.5; done
 kill $cli 2>/dev/null; WINEPREFIX=$OUT/pfx "$ROOT/build/install-wine-patched/bin/wineserver" -k 2>/dev/null
 kill $srv 2>/dev/null; wait 2>/dev/null
 check() { if [[ ${2:-0} == 1 ]]; then echo "PASS $1"; else echo "FAIL $1"; fail=$((fail+1)); fi; }
 req=$(grep -o 'requestedProtocols=[0-9]*' "$OUT/server.log" | head -1 | cut -d= -f2)
 check "client offered HYBRID (CredSSP)" $(( ${req:-0} & 2 ? 1 : 0 ))
+check "untrusted certificate: genuine warning shown before the password was delegated" $([[ ${warned[0]} == warn1:1 ]] && echo 1)
 check "CredSSP completed and delegated the right password" $(grep -q 'CREDSSP COMPLETE.*password matches' "$OUT/server.log" && echo 1)
 check "RDP continued over the CredSSP channel (MCS Connect Initial)" $(grep -q 'CLIENT CONTINUED.*first byte 0x03' "$OUT/server.log" && echo 1)
 
@@ -48,9 +62,11 @@ if command -v x86_64-w64-mingw32-gcc >/dev/null && \
     DISPLAY=:5 MSTSC_WINE_PREFIX=$OUT/pfx MSTSC_WINE_STATE=$OUT/state2 timeout 35 \
         "$ROOT/launcher/mstsc-wine" run "/v:localhost:$((PORT+1))" >/dev/null 2>&1 &
     cli=$!
-    for _ in $(seq 60); do grep -q 'CLIENT CONTINUED\|connection ended\|no data' "$OUT/server2.log" && break; sleep 0.5; done
+    accept_warning "$OUT/server2.log" warn2
+    for _ in $(seq 60); do grep -q 'CLIENT CONTINUED' "$OUT/server2.log" && break; sleep 0.5; done
     kill $cli 2>/dev/null; WINEPREFIX=$OUT/pfx "$ROOT/build/install-wine-patched/bin/wineserver" -k 2>/dev/null
     kill $srv 2>/dev/null; wait 2>/dev/null
+    check "saved credentials: warning shown before delegating" $([[ ${warned[1]} == warn2:1 ]] && echo 1)
     check "saved credentials: CredSSP delegated the saved password without a prompt" $(grep -q 'CREDSSP COMPLETE.*password matches' "$OUT/server2.log" && echo 1)
 else
     echo "SKIP saved credentials (no mingw cross compiler)"
