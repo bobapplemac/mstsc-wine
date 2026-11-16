@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- mstsc-wine fallback icon (project-owned, MIT). Used only when the operator's
+     Microsoft files contain no usable icon. A monitor with a two-way arrow. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="20" y="36" width="216" height="148" rx="10" fill="#2b3a4a"/>
+  <rect x="32" y="48" width="192" height="124" rx="4" fill="#3d8fd6"/>
+  <rect x="106" y="184" width="44" height="24" fill="#2b3a4a"/>
+  <rect x="72" y="206" width="112" height="14" rx="6" fill="#2b3a4a"/>
+  <path d="M84 96h64v-18l34 32-34 32v-18H84z" fill="#ffffff"/>
+  <path d="M172 136h-64v18l-34-32" fill="none" stroke="#ffffff" stroke-width="0"/>
+</svg>

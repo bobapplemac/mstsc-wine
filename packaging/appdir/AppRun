@@ -1,0 +1,5 @@
+#!/bin/sh
+# MSTSC-Wine AppImage/AppDir entry point. Everything is found relative to this file, so
+# the AppDir works from any path (including the AppImage's changing mount point).
+HERE=$(dirname "$(readlink -f "$0")") || exit 1
+exec "$HERE/usr/bin/mstsc" "$@"

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Remote Desktop Connection
+GenericName=Remote Desktop Client
+Comment=Connect to a Windows computer with Microsoft's Remote Desktop Connection client
+Exec=mstsc %f
+TryExec=mstsc
+Icon=org.mstscwine.RemoteDesktopConnection
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=RDP;remote;desktop;mstsc;Windows;terminal server;
+StartupNotify=true
+StartupWMClass=mstsc.exe
