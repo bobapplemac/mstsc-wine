@@ -7,7 +7,8 @@ The project never downloads them and never commits them (`.gitignore` blocks `*.
 ## Recommended: the exporter (packaging)
 
 Run `windows/Export-MstscComponents.ps1` on the Windows machine (64-bit PowerShell, no
-admin rights). It writes `mstsc-components-<build>-amd64.zip` with exactly the files below
+admin rights), e.g. `irm https://raw.githubusercontent.com/bobapplemac/mstsc-wine/main/windows/Export-MstscComponents.ps1 | iex`
+(other ways: [PACKAGING.md](PACKAGING.md)). It writes `mstsc-components-<build>-amd64.zip` with exactly the files below
 plus a `manifest.json` (file versions, SHA-256). Put the ZIP in `private-input/` (or pass
 `MICROSOFT_COMPONENTS=/path/to/zip`) and run `make`. `make verify-components` checks it:
 one Windows build, allowed files only (`packaging/components-policy.json`), hashes and

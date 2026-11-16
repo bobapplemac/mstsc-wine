@@ -36,8 +36,20 @@ Not done or not yet tested:
 
 ## Quick start (package)
 
+On the Windows machine you take the client from, in PowerShell (no admin rights needed):
+
+```powershell
+irm https://raw.githubusercontent.com/bobapplemac/mstsc-wine/main/windows/Export-MstscComponents.ps1 | iex
+```
+
+This writes `mstsc-components-<build>-amd64.zip` into the current folder. The script copies
+only the files mstsc-wine needs and uploads nothing. It runs the current `main` version: to
+read it first, or to use a tagged version, see
+[docs/PACKAGING.md](docs/PACKAGING.md#1-export-your-microsoft-files-on-windows).
+
+Then on Debian 13:
+
 ```bash
-# On Windows: windows/Export-MstscComponents.ps1 → mstsc-components-<build>-amd64.zip
 cp /path/to/mstsc-components-*.zip private-input/
 make                      # Docker build of the runtime + assembly → artifacts/MSTSC-Wine.AppDir
 make appimage             # → artifacts/mstsc-wine-x86_64.AppImage

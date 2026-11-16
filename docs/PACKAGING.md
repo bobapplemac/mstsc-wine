@@ -12,16 +12,33 @@ XWayland) is not tested yet. Other distributions are not claimed.
 ## 1. Export your Microsoft files (on Windows)
 
 On a Windows machine you are licensed to use (Windows Server 2022 is the verified source),
-open 64-bit PowerShell **without** administrator rights. Review the script, then run it:
+open 64-bit PowerShell (5.1 or 7). No administrator rights are needed.
+
+**Quick:** download and run the current version in one step:
 
 ```powershell
-irm https://raw.githubusercontent.com/<owner>/mstsc-wine/<tag>/windows/Export-MstscComponents.ps1 -OutFile Export-MstscComponents.ps1
-Get-FileHash .\Export-MstscComponents.ps1
+irm https://raw.githubusercontent.com/bobapplemac/mstsc-wine/main/windows/Export-MstscComponents.ps1 | iex
+```
+
+- **Options.** `iex` can't pass parameters, so set environment variables first, e.g.
+  `$env:MSTSC_EXPORT_OUTDIR = 'D:\out'`, `$env:MSTSC_EXPORT_LANGUAGE = 'de-DE'`, or
+  `$env:MSTSC_EXPORT_EXPERIMENTAL = '1'`.
+- **Parameters.** Alternatively:
+  `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/bobapplemac/mstsc-wine/main/windows/Export-MstscComponents.ps1))) -Experimental`.
+- **Errors.** An error is reported without closing your PowerShell window.
+
+**Reviewed:** read the script before running it, and pin a version:
+
+```powershell
+irm https://raw.githubusercontent.com/bobapplemac/mstsc-wine/main/windows/Export-MstscComponents.ps1 -OutFile Export-MstscComponents.ps1
+notepad .\Export-MstscComponents.ps1
 powershell -ExecutionPolicy Bypass -File .\Export-MstscComponents.ps1
 ```
 
-Use a tagged version, not `main`. You can also copy the script from your checkout
-(`windows/Export-MstscComponents.ps1`). The script:
+The quick variant runs whatever is on `main` at that moment. For a fixed version, replace
+`main` in the URL with a release tag or commit. You can also copy the script from your
+checkout (`windows/Export-MstscComponents.ps1`). Older Windows PowerShell may need TLS 1.2
+enabled first: `[Net.ServicePointManager]::SecurityProtocol = 'Tls12'`. The script:
 - writes `mstsc-components-<build>-amd64.zip` with only the files listed in
   `packaging/components-policy.json` and a `manifest.json` (versions, SHA-256);
 - copies nothing else (no registry, credentials, user or machine names) and uploads nothing;
