@@ -74,6 +74,7 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | EXP-066 | 2026-11-16 | AppImage with 0001–0040 | Live, EXP-031 test VM by IP, fresh profile (operator signed in) | **Genuine certificate warning before the session**, as on Windows (operator: "looked correct"). Trace: first attempt refused before delegation, trust status queried. "No": no second connection, nothing delegated. "Yes": reconnect with `0xc11d`, CredSSP completes, desktop (operator-confirmed) |
 | EXP-067 | 2026-11-16 | package with ADR-0049 | `make install` now installs the AppImage; tested in throwaway HOMEs: `make install`, `make install-appdir`, then `make install` again, `make uninstall` | Works; one installation at a time. Found an intermittent installer bug (manifest left as `.tmp` when the last old entry was gone), fixed; `test-install.sh appimage` 8/8 |
 | EXP-068 | 2026-11-16 | `main` at `c18e596` (0001–0040, ADR-0049) | Second machine (fresh Debian 13, KDE Plasma on X11, EXP-064) updated in place: `git pull`, `make`, `make install`, replacing its earlier AppDir install with the AppImage | **Works** (operator). The install switched to the AppImage, and connecting by IP to the Windows Server 2025 host now shows the **genuine certificate warning** over NLA, as on Windows (confirms EXP-065/066 on the second machine) |
+| EXP-069 | 2026-11-18 | launcher + Wine 11.0 source review (ADR-0050) | Operator report: genuine mstsc is tiny on an LMDE/Cinnamon high-DPI laptop at 150%; inspect Wine DPI initialization, then exercise launcher detection with fixture `Xft.dpi=144`, explicit `MSTSC_WINE_DPI=144`, and an invalid value | Wine defaults to 96 when private-prefix `LogPixels` is absent (V); launcher had never set it. Automatic and explicit detection report 144; invalid input is rejected. Launcher test now checks prefix state, registry and log under a nested display. Live visual verification on Cinnamon/KDE X11/Wayland is pending; cause-to-fix attribution remains (I) until then. |
 
 ## Reproducible tests
 
@@ -91,6 +92,8 @@ Client: mstsc.exe / mstscax.dll **10.0.20348.5866** (Server 2022), SHA-256 in RE
 | user32 #2598 | `wine artifacts/user32-ordinals/ord2598.exe` | patch 0003 |
 | shcore conformance | `wine build/wine-patched/dlls/shcore/tests/x86_64-windows/shcore_test.exe shcore` | patch 0004 |
 | Launcher isolation | `tests/launch/test-launcher-isolation.sh` | F-013, N-003 |
+| Desktop DPI import | `tests/launch/test-launcher-isolation.sh` | F-011/T-008; `Xft.dpi` → prefix state and Wine `LogPixels` |
+| DPI detection | `tests/launch/test-dpi-detection.sh [RUNTIME]` | automatic `Xft.dpi`, explicit override, safe fallback, invalid input |
 | Fullscreen → windowed pointer grab | `tests/static/fullscreen-clip/build.sh OUT && run.sh WINE OUT` (own Xephyr `:9` + metacity) | patch 0016 |
 | Fullscreen Restore/Maximize (GUI) | `tests/launch/test-fullscreen-restore.sh` (needs `freerdp3-shadow-x11`, Xvfb, muffin or metacity) | patch 0016, genuine mstsc end to end |
 | Credential prompt | `tests/static/credui-prompt/build.sh OUT && run.sh WINE OUT` (own Xephyr `:9`): user name as typed, long message shown in full, empty password on re-prompt | patches 0017, 0020, 0021 |

@@ -28,8 +28,9 @@
 #   MSTSC_WINE_DLLOVERRIDES extra DLL overrides (developers)
 #   MSTSC_WINE_NTLM_AUTH  development: absolute path of the NTLM helper to use
 #   MSTSC_WINE_BACKEND    auto|x11|wayland (default auto -> x11/XWayland)
+#   MSTSC_WINE_DPI        auto|48..480 (default auto -> Xft.dpi, otherwise 96)
 # User configuration: $XDG_CONFIG_HOME/mstsc-wine/mstsc-wine.conf (KEY=VALUE, the keys
-# MSTSC_WINE_BACKEND, MSTSC_WINE_DLLOVERRIDES and MSTSC_WINE_TRACE only).
+# MSTSC_WINE_BACKEND, MSTSC_WINE_DPI, MSTSC_WINE_DLLOVERRIDES and MSTSC_WINE_TRACE only).
 set -euo pipefail
 umask 077
 
@@ -58,7 +59,7 @@ CONF=$XDG_CONFIG_HOME/mstsc-wine/mstsc-wine.conf
 if [[ -f $CONF ]]; then
     while IFS='=' read -r k v; do
         case $k in
-            MSTSC_WINE_BACKEND|MSTSC_WINE_DLLOVERRIDES|MSTSC_WINE_TRACE)
+            MSTSC_WINE_BACKEND|MSTSC_WINE_DPI|MSTSC_WINE_DLLOVERRIDES|MSTSC_WINE_TRACE)
                 [[ -n ${!k:-} ]] || printf -v "$k" '%s' "$v";;
         esac
     done < <(grep -E '^[A-Z_]+=' "$CONF" || true)
@@ -69,6 +70,7 @@ fi
 : "${MSTSC_WINE_STATE:=$XDG_STATE_HOME/mstsc-wine}"
 : "${MSTSC_WINE_CACHE:=$XDG_CACHE_HOME/mstsc-wine}"
 : "${MSTSC_WINE_BACKEND:=auto}"
+: "${MSTSC_WINE_DPI:=auto}"
 
 # ---------------------------------------------------------------- runtime lookup
 # Packaged (AppDir): this file is <AppDir>/usr/bin/mstsc and everything else is found
@@ -101,11 +103,36 @@ need_runtime() {
     [[ -n ${RUNTIME:-} && -x $RT_WINE ]] || die "no Wine runtime found; build one (make) or set MSTSC_WINE_RUNTIME"
 }
 
+# Wine 11.0 does not import the desktop DPI: without LogPixels in its registry it
+# reports 96 DPI even when an X11/XWayland desktop publishes a scaled Xft.dpi. That is
+# especially visible with per-monitor-aware programs such as mstsc, which compositors
+# correctly decline to bitmap-scale. Keep detection desktop-neutral: Cinnamon and KDE
+# both publish Xft.dpi through the X resource manager when X11 clients should scale
+# themselves. An explicit value covers Wayland/compositor combinations that do not.
+detect_dpi() {
+    local dpi=""
+    DPI_SOURCE=default
+    if [[ $MSTSC_WINE_DPI != auto ]]; then
+        dpi=$MSTSC_WINE_DPI
+        DPI_SOURCE=config
+    elif [[ -n ${DISPLAY:-} ]] && command -v xrdb >/dev/null 2>&1; then
+        local resources
+        resources=$(LC_ALL=C xrdb -query 2>/dev/null || true)
+        dpi=$(awk 'tolower($1) == "xft.dpi:" && $2 ~ /^[0-9]+([.][0-9]+)?$/ {printf "%d\n", $2 + 0.5; exit}' <<<"$resources")
+        [[ -n $dpi ]] && DPI_SOURCE=Xft.dpi
+    fi
+    [[ -n $dpi ]] || dpi=96
+    [[ $dpi =~ ^[0-9]+$ ]] || die "MSTSC_WINE_DPI must be auto or an integer from 48 to 480"
+    (( dpi >= 48 && dpi <= 480 )) || die "MSTSC_WINE_DPI must be auto or an integer from 48 to 480"
+    EFFECTIVE_DPI=$dpi
+}
+
 # ---------------------------------------------------------------- environment (child scope)
 # This script runs as its own process: everything exported here reaches only Wine and
 # its children, never the user's shell.
 setup_env() {
     need_runtime
+    detect_dpi
     # Ignore every inherited Wine setting: another Wine installation's prefix, loader,
     # server, DLL path or overrides must not leak in (spec §4.2, PKG-007).
     local v
@@ -145,6 +172,7 @@ new_log() {
         echo "# runtime: $(redact "$RUNTIME") ($("$RT_WINE" --version 2>/dev/null))"
         echo "# prefix: $(redact "$WINEPREFIX")"
         echo "# session: ${XDG_SESSION_TYPE:-?} desktop=${XDG_CURRENT_DESKTOP:-?} display=${DISPLAY:-} wayland=${WAYLAND_DISPLAY:+set}"
+        echo "# dpi: $EFFECTIVE_DPI ($DPI_SOURCE)"
         echo "# WINEDEBUG=$WINEDEBUG"
         echo "# WINEDLLOVERRIDES=$WINEDLLOVERRIDES"
     } > "$LOG"
@@ -170,7 +198,7 @@ components_id() {
     [[ -f $COMPONENTS/manifest.sha256 ]] && sha256sum < "$COMPONENTS/manifest.sha256" | cut -c1-16 || echo none
 }
 STATE_FILE() { echo "$WINEPREFIX/.mstsc-wine-state"; }
-wanted_state() { echo "format=1 runtime=$(runtime_id) components=$(components_id)"; }
+wanted_state() { echo "format=2 runtime=$(runtime_id) components=$(components_id) dpi=$EFFECTIVE_DPI"; }
 prefix_current() { [[ -f $WINEPREFIX/system.reg && -f $(STATE_FILE) && $(cat "$(STATE_FILE)") == "$(wanted_state)" ]]; }
 
 with_lock() {   # run "$@" holding the per-application lock
@@ -212,6 +240,7 @@ do_init() {
         if [[ -L "$u/$d" ]]; then rm -f "$u/$d"; mkdir -p "$u/$d"; fi
     done
     install_components
+    configure_dpi
     configure_fonts
     "$RT_WINESERVER" -w
     local tmp; tmp=$(mktemp "$WINEPREFIX/.mstsc-wine-state.XXXX")
@@ -252,6 +281,12 @@ configure_fonts() {
     if [[ -f "$fonts/tahoma.ttf" ]]; then
         "$RT_WINE" reg add "$key" /v "MS Shell Dlg 2" /d "Tahoma" /f >>"$LOG" 2>&1 || die "reg add failed (see $(redact "$LOG"))"
     fi
+}
+
+configure_dpi() {
+    local key='HKCU\Control Panel\Desktop'
+    "$RT_WINE" reg add "$key" /v LogPixels /t REG_DWORD /d "$EFFECTIVE_DPI" /f >>"$LOG" 2>&1 ||
+        die "setting Wine DPI failed (see $(redact "$LOG"))"
 }
 
 install_components() {
@@ -361,6 +396,7 @@ ntlm_helper() {
 
 cmd_version() {
     need_runtime
+    detect_dpi
     echo "mstsc-wine $VERSION ($MODE)"
     echo "WineRevision: $("$RT_WINE" --version)${METADATA:+ $(meta build-info.json wine_commit)}"
     if [[ $MODE == packaged ]]; then
@@ -377,6 +413,7 @@ cmd_version() {
     echo "Prefix: $(redact "$MSTSC_WINE_PREFIX")"
     echo "HostOS: $(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-unknown}") $(uname -r)"
     echo "DisplayBackend: $MSTSC_WINE_BACKEND (${XDG_SESSION_TYPE:-?})"
+    echo "DisplayDPI: $EFFECTIVE_DPI source=$DPI_SOURCE"
 }
 
 # Where would the dynamic loader take SONAME from, with the runtime's library path?
@@ -397,6 +434,7 @@ cmd_doctor() {
     case $(readlink -f "$RT_WINE") in "$(readlink -f "$RUNTIME")"/*) ;; *) echo "  PROBLEM: wine resolves outside the runtime"; ok=0;; esac
     echo "prefix:     $(p "$WINEPREFIX") $( [[ -f $WINEPREFIX/system.reg ]] && { prefix_current && echo '(up to date)' || echo '(needs update; done on next start)'; } || echo '(not created yet)')"
     echo "session:    ${XDG_SESSION_TYPE:-unknown} / ${XDG_CURRENT_DESKTOP:-unknown}"
+    echo "DPI:        $EFFECTIVE_DPI source=$DPI_SOURCE"
     [[ -n "${DISPLAY:-}" ]] && echo "X display:  $DISPLAY" || { echo "X display:  MISSING (XWayland/X11 required)"; ok=0; }
     if [[ -f "$COMPONENTS/manifest.sha256" ]]; then
         if (cd "$COMPONENTS" && sha256sum --quiet -c manifest.sha256 >/dev/null 2>&1); then

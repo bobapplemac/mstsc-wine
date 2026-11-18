@@ -398,3 +398,23 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   hence `StartupWMClass=mstsc.exe`.
 - The AppImage type 2 runtime (release 20251108) mounts a zstd SquashFS produced by Debian's
   `mksquashfs` (V); appimagetool is not needed.
+
+## R-028 Desktop scaling and Wine system DPI (V/I)
+
+- Wine 11.0 initializes system DPI from `HKCU\Control Panel\Desktop\LogPixels`, then
+  `HKCC\Software\Fonts\LogPixels`, and finally 96 (V, `dlls/win32u/font.c`). Its X11
+  display enumeration uses that Wine system DPI; it does not import the X resource
+  manager's `Xft.dpi` (V, source review).
+- Genuine mstsc resolves the per-monitor-DPI APIs and opts into monitor awareness (V,
+  R-006/ADR-0006). Therefore a 96-DPI Wine prefix can produce a physically tiny UI on a
+  scaled desktop rather than receiving legacy bitmap scaling (I; matches the operator's
+  LMDE/Cinnamon 150% report).
+- Cinnamon publishes its effective X11-client DPI as `Xft.dpi`; with its X11 fractional
+  framebuffer mode this can intentionally be an integer UI scale (for example 192) that
+  the compositor later downsamples, rather than simply `96 * requested_fraction` (V/I,
+  upstream Cinnamon/Muffin source and issue evidence). Copy the published value; do not
+  recompute it from the nominal percentage or physical monitor dimensions.
+- KDE and Cinnamon can both expose X resources to X11/XWayland clients. Whether the
+  compositor also scales those clients is session policy, so the four-environment matrix
+  (Cinnamon/KDE × X11/Wayland) still needs live checks (H). ADR-0050 provides an explicit
+  DPI override and diagnostics without branching on desktop names.

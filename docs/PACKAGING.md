@@ -151,7 +151,7 @@ make install-appdir     # development, or no FUSE: install the unpacked AppDir i
 |---|---|
 | Wine prefix (registry, saved credentials, `Default.rdp`) | `${XDG_DATA_HOME:-~/.local/share}/mstsc-wine/prefix` |
 | Registry backups made before a runtime upgrade | `${XDG_DATA_HOME:-~/.local/share}/mstsc-wine/backups/` |
-| Settings (`MSTSC_WINE_BACKEND=`, `MSTSC_WINE_DLLOVERRIDES=`, `MSTSC_WINE_TRACE=`) | `${XDG_CONFIG_HOME:-~/.config}/mstsc-wine/mstsc-wine.conf` |
+| Settings (`MSTSC_WINE_BACKEND=`, `MSTSC_WINE_DPI=`, `MSTSC_WINE_DLLOVERRIDES=`, `MSTSC_WINE_TRACE=`) | `${XDG_CONFIG_HOME:-~/.config}/mstsc-wine/mstsc-wine.conf` |
 | Logs (no host names, user names or passwords) | `${XDG_STATE_HOME:-~/.local/state}/mstsc-wine/logs/` |
 | Build provenance, licences, sources | `<AppDir>/usr/share/mstsc-wine/metadata/` |
 
@@ -164,6 +164,13 @@ make install-appdir     # development, or no FUSE: install the unpacked AppDir i
   system Wine are never used or changed. `WINEPREFIX`, `WINELOADER`, `WINESERVER`,
   `WINEDLLPATH`, `WINEDLLOVERRIDES` and every other inherited `WINE*` variable are ignored.
   The prefix is a configuration boundary, not a security sandbox.
+- **Display scaling.** On X11 and XWayland, the launcher copies the desktop's published
+  `Xft.dpi` into Wine's private `LogPixels` setting. A changed DPI updates the prefix on
+  the next launch. `mstsc doctor` reports both the value and its source. If a Wayland
+  compositor does not publish DPI for XWayland clients, set an explicit integer, for
+  example `MSTSC_WINE_DPI=144` for 150%, in `mstsc-wine.conf`. Use the compositor's
+  default XWayland scaling policy first; an override can double-scale applications when
+  the compositor already scales them.
 
 ## 6. Diagnostics
 
