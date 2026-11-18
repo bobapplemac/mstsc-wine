@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-16_
+_Last updated: 2026-11-18_
 
 ## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 ## Packaging (docs/MSTSC-Wine-Packaging-Implementation-Spec.md v1.1): P0–P6 implemented (2026-11-15)
@@ -36,6 +36,10 @@ _Last updated: 2026-11-16_
   exports), `mui-config.py`, `xshot.py`, `build-wine.sh`.
 - Launcher `launcher/mstsc-wine`: init/import/run/exec/doctor/--version, hash-verified
   component store, private prefix, redacted deterministic logs.
+- High-DPI prefix integration (ADR-0050): the launcher imports desktop `Xft.dpi` into
+  Wine `LogPixels`, updates the prefix when it changes, reports the source in `doctor`,
+  and provides a validated override. Registry behavior is automated; live visual checks
+  remain for Cinnamon/KDE on X11/Wayland.
 - Tests: regression A/B suite (incl. CredSSP client), launcher isolation test, server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize end-to-end (`tests/launch/test-fullscreen-restore.sh`, local RDP server endpoint).
 - "Remember my password": saved credentials are delegated on reconnect (patch 0018, ADR-0020), and user names without a domain are kept as typed (patch 0017, ADR-0021). Verified offline and confirmed by the operator against `<test-host>` (EXP-037).
 - Wrong password: "Your credentials did not work" re-prompt, as on Windows, instead of a retry without NLA (patch 0019, ADR-0022). Verified offline with the genuine mstsc and confirmed by the operator against `<test-host>`.
@@ -63,12 +67,16 @@ _Last updated: 2026-11-16_
     copied both ways. Pictures and every other scenario not yet checked live.
 
 ## Blockers (need human input)
-1. KDE Plasma on Wayland (125%), the primary target, is still untested. KDE Plasma on X11 works on a second machine (EXP-064).
+1. The live DPI matrix needs real scaled desktops: Cinnamon and KDE on X11 and Wayland
+   (Wine through XWayland), at 100%, 125%, and 150%. KDE Plasma on X11 at 100% works on
+   a second machine (EXP-064); the other scaled combinations are unverified.
 
 ## Next actions
 1. Clipboard follow-ups: pictures on a live session, T-013 (directory trees), T-014 (two sessions), Dolphin
    (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 2. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
 3. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-4. Phase 1 features on the live session: keyboard, audio, fullscreen and windowed, DPI.
+4. DPI: visually verify 100%, 125%, and 150% on Cinnamon and KDE, on both X11 and
+   Wayland/XWayland; check dialog size, session surface, pointer coordinates, and moving
+   between differently scaled monitors. Then continue keyboard, audio, and display work.
 5. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.
