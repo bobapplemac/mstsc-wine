@@ -453,3 +453,20 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
 - Patch 0042 adds an opt-in `+wpp` channel that enables classic providers and logs event
   IDs and bounded arguments (ADR-0052). A synthetic provider test fails on unmodified
   Wine and passes on patched Wine (V). Live WPP capture and call-site mapping are next.
+
+## R-031 live RDPSND codec enumeration and PCM false positives (V/I)
+
+- The working local fixture advertises one 44.1 kHz stereo PCM format. Its RDPSND WPP
+  sequence enumerates that format, emits the client-response events, creates playback,
+  and calls `waveOutWrite` (V).
+- The real Windows server advertises 30 formats. Its first entries are MPEG-4 AAC
+  (`0xa106`) variants, followed by PCM and compressed legacy formats. MSTSC probes each
+  advertised format through the installed ACM drivers (V).
+- Wine's Microsoft PCM driver advertises only `WAVE_FORMAT_PCM`, but `PCM_StreamOpen`
+  did not validate either format tag. A PCM-shaped MPEG-4 AAC source was therefore
+  accepted by `ACM_STREAMOPENF_QUERY` and reported as decodable (V). Unmodified Wine
+  11.0 and the pre-patch runtime both reproduce the false success.
+- Patch 0043 requires PCM tags on both sides. The focused query changes from success to
+  `ACMERR_NOTPOSSIBLE`, and Wine's `msacm32` suite passes (V). Removing false codec
+  capabilities should let MSTSC build a valid client-format response for the live
+  server (I); only an audible live retest can verify F-009/T-015.

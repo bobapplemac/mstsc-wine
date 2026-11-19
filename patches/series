@@ -40,3 +40,4 @@
 0040-secur32-Fail-CredSSP-with-SEC_E_MUTUAL_AUTH_FAILED-f.patch
 0041-msacm32-Accept-driver-IDs-in-acmFormatTagDetails.patch
 0042-ntdll-Add-opt-in-classic-WPP-diagnostics.patch
+0043-msacm32-Reject-non-PCM-formats-in-the-PCM-converter.patch
