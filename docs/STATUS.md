@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-18_
+_Last updated: 2026-11-19_
 
 ## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 ## Packaging (docs/MSTSC-Wine-Packaging-Implementation-Spec.md v1.1): P0–P6 implemented (2026-11-15)
@@ -40,16 +40,17 @@ _Last updated: 2026-11-18_
   Wine `LogPixels`, updates the prefix when it changes, reports the source in `doctor`,
   and provides a validated override. Registry behavior is automated; confirmed live on
   LMDE/Cinnamon at 150% (EXP-069). KDE and Wayland/XWayland checks remain.
-- Remote audio (ADR-0051, patch 0041): mstsc's ACM driver-ID format queries now work, so
-  it advertises PCM to the RDP server and writes received audio to Wine. The focused Wine
-  test and genuine-mstsc local `rdpsnd` test pass (EXP-070); live audible confirmation is
-  pending on the operator's LMDE system.
+- Remote audio: patch 0041 fixes mstsc's ACM driver-ID format queries; the focused Wine
+  test and genuine-mstsc local `rdpsnd` test reach `waveOutWrite` (EXP-070). Repeated live
+  LMDE tests still produce no sound: codec probes succeed, but no playback stream or data
+  reaches Wine, including with TCP-only transport and low/high audio quality. Patch 0042
+  adds opt-in WPP diagnostics for the still-open live-channel failure (ADR-0052/EXP-071).
 - Tests: regression A/B suite (incl. CredSSP client), launcher isolation test,
   server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end
   (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize
   (`tests/launch/test-fullscreen-restore.sh`), and remote-audio negotiation
-  (`tests/launch/test-audio.sh`). At the patch-0041 checkpoint both regression modes
-  report 0 unexpected and every launch test passes (EXP-070).
+  (`tests/launch/test-audio.sh`). At the patch-0042 checkpoint both regression modes
+  report 0 unexpected and every launch test passes (EXP-071).
 - "Remember my password": saved credentials are delegated on reconnect (patch 0018, ADR-0020), and user names without a domain are kept as typed (patch 0017, ADR-0021). Verified offline and confirmed by the operator against `<test-host>` (EXP-037).
 - Wrong password: "Your credentials did not work" re-prompt, as on Windows, instead of a retry without NLA (patch 0019, ADR-0022). Verified offline with the genuine mstsc and confirmed by the operator against `<test-host>`.
 - Kerberos: works without joining the domain (patches 0022–0025, ADR-0025–0028), offline against an MIT realm and live against `<domain-rdp-host>` in `<test-domain>`. Sign in as `user@dns.domain` (or `dns.domain\user`). No certificate warning then, as on Windows.
@@ -81,7 +82,8 @@ _Last updated: 2026-11-18_
    at 150% is confirmed (EXP-069); KDE Plasma X11 at 100% works (EXP-064).
 
 ## Next actions
-1. Confirm audible remote-session playback on the operator's LMDE system with patch 0041.
+1. Capture the live MSTSC audio-channel WPP events with patch 0042, map the failing event
+   and HRESULT to the mstscax call site, then fix and retest audible remote playback.
 2. Clipboard follow-ups: pictures on a live session, T-013 (directory trees), T-014 (two sessions), Dolphin
    (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 3. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).

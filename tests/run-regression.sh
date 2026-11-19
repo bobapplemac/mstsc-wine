@@ -15,6 +15,8 @@ FIX=$ROOT/artifacts/mui-fixture
 "$ROOT/tests/static/mui-fixture/build.sh" "$FIX" >/dev/null || { echo "fixture build failed"; exit 1; }
 ORD=$ROOT/artifacts/user32-ordinals
 "$ROOT/tests/static/user32-ordinals/build.sh" "$ORD" >/dev/null || { echo "ordinal fixture build failed"; exit 1; }
+WPP=$ROOT/artifacts/wpp-trace
+"$ROOT/tests/static/wpp-trace/build.sh" "$WPP" >/dev/null || { echo "WPP fixture build failed"; exit 1; }
 
 fails=0
 check() { # name expected(pass|fail) cmd...
@@ -24,6 +26,7 @@ check() { # name expected(pass|fail) cmd...
 }
 exp_fix=pass; [[ $mode == baseline ]] && exp_fix=fail
 check "smoke: cmd /c echo"                     pass "$W" cmd /c echo ok
+check "ntdll: opt-in classic WPP diagnostics" $exp_fix "$ROOT/tests/static/wpp-trace/run.sh" "$W" "$WPP"
 check "mui: string from en-US satellite"       $exp_fix "$W" "$FIX/muitest.exe"
 check "mui: mismatched checksum is rejected"   pass "$W" "$FIX/bad/muitest.exe" expect-missing
 check "mui: i386 resource-only satellite"    $exp_fix "$W" "$FIX/i386/muitest.exe"

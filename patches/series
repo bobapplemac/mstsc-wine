@@ -39,3 +39,4 @@
 0039-msv1_0-Run-the-NTLM-helper-named-by-WINENTLMAUTH.patch
 0040-secur32-Fail-CredSSP-with-SEC_E_MUTUAL_AUTH_FAILED-f.patch
 0041-msacm32-Accept-driver-IDs-in-acmFormatTagDetails.patch
+0042-ntdll-Add-opt-in-classic-WPP-diagnostics.patch
