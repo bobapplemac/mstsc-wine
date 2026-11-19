@@ -435,3 +435,21 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   PCM stereo at 44.1 kHz and writes the fixture's tone through `waveOutWrite` (V). A
   GStreamer-enabled Wine build, callback-timing changes, and pitch-control changes did
   not alter the pre-fix failure (V); none is required for the fix.
+
+## R-030 live audio stops before Wine playback (V/I)
+
+- Patch 0041 is installed and active on the operator's LMDE laptop (V). In a real Windows
+  session mstsc successfully probes PCM conversions for MS ADPCM (tag 2), IMA ADPCM
+  (tag 17), A-law (tag 6), and GSM 6.10 (tag 49), but it never calls
+  `acmStreamPrepareHeader`, `acmStreamConvert`, or `waveOutWrite` (V). The initial output
+  device is opened successfully and then closed.
+- The server session shows `Remote Audio`, and the same result occurs with
+  `audioqualitymode` 0 and 2 and with `fClientDisableUDP=1` (V). The remaining failure is
+  therefore before Wine's codec/output path and is not explained by UDP transport or the
+  selected quality mode (I).
+- `+seh` exposes no relevant `OutputDebugStringW` failure (V). MSTSC's detailed RDPSND and
+  dynamic-channel diagnostics use classic WPP; Wine 11.0 registers those providers but
+  never enables them, while `EtwTraceMessageVa` discards their events (V, source review).
+- Patch 0042 adds an opt-in `+wpp` channel that enables classic providers and logs event
+  IDs and bounded arguments (ADR-0052). A synthetic provider test fails on unmodified
+  Wine and passes on patched Wine (V). Live WPP capture and call-site mapping are next.
