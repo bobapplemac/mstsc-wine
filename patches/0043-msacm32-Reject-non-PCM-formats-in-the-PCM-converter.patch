@@ -1,0 +1,104 @@
+From cf729e2318d35a8b334e4d13a5edc99809cf4f68 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Thu, 19 Nov 2026 01:22:10 -0500
+Subject: [PATCH 43/43] msacm32: Reject non-PCM formats in the PCM converter
+
+---
+ dlls/msacm32/pcmconverter.c |  8 ++++++
+ dlls/msacm32/tests/msacm.c  | 54 +++++++++++++++++++++++++++++++++++++
+ 2 files changed, 62 insertions(+)
+
+diff --git a/dlls/msacm32/pcmconverter.c b/dlls/msacm32/pcmconverter.c
+index 0b9724b..9bb2853 100644
+--- a/dlls/msacm32/pcmconverter.c
++++ b/dlls/msacm32/pcmconverter.c
+@@ -1145,6 +1145,14 @@ static	LRESULT	PCM_StreamOpen(PACMDRVSTREAMINSTANCE adsi)
+ 
+     assert(!(adsi->fdwOpen & ACM_STREAMOPENF_ASYNC));
+ 
++    if (adsi->pwfxSrc->wFormatTag != WAVE_FORMAT_PCM ||
++        adsi->pwfxDst->wFormatTag != WAVE_FORMAT_PCM)
++    {
++        WARN("unsupported format conversion %#x -> %#x\n",
++             adsi->pwfxSrc->wFormatTag, adsi->pwfxDst->wFormatTag);
++        return ACMERR_NOTPOSSIBLE;
++    }
++
+     switch(adsi->pwfxSrc->wBitsPerSample){
+     case 8:
+         idx = 0;
+diff --git a/dlls/msacm32/tests/msacm.c b/dlls/msacm32/tests/msacm.c
+index 0c0df7a..ff312f4 100644
+--- a/dlls/msacm32/tests/msacm.c
++++ b/dlls/msacm32/tests/msacm.c
+@@ -1313,6 +1313,59 @@ static void test_acmFormatChoose(void)
+     HeapFree(GetProcessHeap(), 0, pwfx);
+ }
+ 
++struct pcm_stream_format_state
++{
++    unsigned int drivers;
++};
++
++static BOOL CALLBACK pcm_stream_format_cb(HACMDRIVERID id, DWORD_PTR instance, DWORD support)
++{
++    struct pcm_stream_format_state *state = (void *)instance;
++    ACMDRIVERDETAILSW details = {0};
++    WAVEFORMATEX src = {0}, dst = {0};
++    HACMDRIVER driver;
++    HACMSTREAM stream = NULL;
++    MMRESULT rc;
++
++    details.cbStruct = sizeof(details);
++    if (acmDriverDetailsW(id, &details, 0) != MMSYSERR_NOERROR ||
++        details.wMid != MM_MICROSOFT || details.wPid != MM_MSFT_ACM_PCM)
++        return TRUE;
++    if (acmDriverOpen(&driver, id, 0) != MMSYSERR_NOERROR)
++        return TRUE;
++
++    state->drivers++;
++    src.wFormatTag = WAVE_FORMAT_MPEG4_AAC;
++    src.nChannels = 2;
++    src.nSamplesPerSec = 44100;
++    src.nAvgBytesPerSec = 24000;
++    src.nBlockAlign = 4;
++    src.wBitsPerSample = 16;
++    dst.wFormatTag = WAVE_FORMAT_PCM;
++    dst.nChannels = 2;
++    dst.nSamplesPerSec = 44100;
++    dst.nAvgBytesPerSec = 176400;
++    dst.nBlockAlign = 4;
++    dst.wBitsPerSample = 16;
++
++    rc = acmStreamOpen(&stream, driver, &src, &dst, NULL, 0, 0, ACM_STREAMOPENF_QUERY);
++    ok(rc == ACMERR_NOTPOSSIBLE, "expected ACMERR_NOTPOSSIBLE, got %#x\n", rc);
++    if (rc == MMSYSERR_NOERROR)
++        acmStreamClose(stream, 0);
++    acmDriverClose(driver, 0);
++    return TRUE;
++}
++
++static void test_pcm_stream_formats(void)
++{
++    struct pcm_stream_format_state state = {0};
++    MMRESULT rc;
++
++    rc = acmDriverEnum(pcm_stream_format_cb, (DWORD_PTR)&state, 0);
++    ok(rc == MMSYSERR_NOERROR, "acmDriverEnum failed with %#x\n", rc);
++    ok(state.drivers == 1, "expected one Microsoft PCM driver, got %u\n", state.drivers);
++}
++
+ static void test_mp3(void)
+ {
+     MPEGLAYER3WAVEFORMAT src;
+@@ -1566,6 +1619,7 @@ START_TEST(msacm)
+     test_acmFormatTagDetails();
+     test_driver_id_format_tag_details();
+     test_acmFormatChoose();
++    test_pcm_stream_formats();
+     test_mp3();
+     /* Test acmDriverAdd in the end as it may conflict
+      * with other tests due to codec lookup order */
+-- 
+2.47.3
+
