@@ -418,3 +418,20 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   compositor also scales those clients is session policy, so the four-environment matrix
   (Cinnamon/KDE × X11/Wayland) still needs live checks (H). ADR-0050 provides an explicit
   DPI override and diagnostics without branching on desktop names.
+
+## R-029 mstsc audio-format negotiation and Wine ACM handles (V)
+
+- Wine's PulseAudio backend is functional on the reported LMDE machine: `winepulse.drv`
+  is selected and the Wine control-panel test sound plays (operator, V). In a remote
+  session mstsc opened and closed `WAVE_MAPPER`, but made no `waveOutWrite` call (trace, V).
+- A local `rdpsnd` server fixture showed that mstsc received a PCM server format but
+  replied with zero client formats (V). Its ACM enumeration calls
+  `acmFormatTagDetailsW` with the `HACMDRIVERID` returned by `acmDriverEnum`, not with an
+  opened `HACMDRIVER` (trace and disassembly, V).
+- Wine 11.0 accepted only open driver handles on that path, so all of mstsc's format-tag
+  queries returned `ACMERR_NOTPOSSIBLE` (V). Native Windows accepts the driver ID even
+  though the public signature names an `HACMDRIVER` (conformance test, V).
+- Patch 0041 temporarily opens an incoming driver ID. With the patch, mstsc advertises
+  PCM stereo at 44.1 kHz and writes the fixture's tone through `waveOutWrite` (V). A
+  GStreamer-enabled Wine build, callback-timing changes, and pitch-control changes did
+  not alter the pre-fix failure (V); none is required for the fix.

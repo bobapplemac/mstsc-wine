@@ -38,3 +38,4 @@
 0038-winex11-Do-not-escape-path-separators-in-exported-fi.patch
 0039-msv1_0-Run-the-NTLM-helper-named-by-WINENTLMAUTH.patch
 0040-secur32-Fail-CredSSP-with-SEC_E_MUTUAL_AUTH_FAILED-f.patch
+0041-msacm32-Accept-driver-IDs-in-acmFormatTagDetails.patch
