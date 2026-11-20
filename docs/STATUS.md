@@ -44,7 +44,8 @@ _Last updated: 2026-11-19_
   local `rdpsnd` test reaches `waveOutWrite` (EXP-070). Live WPP then exposed a second
   Wine defect: the PCM-only ACM driver claimed it could decode the server's MPEG-4 AAC
   formats. Patch 0043 rejects non-PCM stream tags; focused and Wine conformance tests
-  pass (ADR-0053/EXP-072). Audible live confirmation is still required for F-009/T-015.
+  pass (ADR-0053/EXP-072). The operator confirms audible remote Windows audio after a
+  fresh LMDE build (EXP-073), satisfying F-009 in the tested Cinnamon environment.
 - Tests: regression A/B suite (incl. CredSSP client), launcher isolation test,
   server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end
   (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize
@@ -83,8 +84,8 @@ _Last updated: 2026-11-19_
    at 150% is confirmed (EXP-069); KDE Plasma X11 at 100% works (EXP-064).
 
 ## Next actions
-1. Rebuild with patch 0043 and retest audible remote playback. If it still fails, compare
-   the new RDPSND WPP sequence with EXP-072 and continue mapping the first divergence.
+1. Complete T-015 audio follow-up: verify repeated start/stop, reconnect, and process
+   cleanup, then repeat the audio smoke test on KDE and Wayland/XWayland.
 2. Clipboard follow-ups: pictures on a live session, T-013 (directory trees), T-014 (two sessions), Dolphin
    (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 3. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).

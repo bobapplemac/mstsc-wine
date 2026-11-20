@@ -467,6 +467,8 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   accepted by `ACM_STREAMOPENF_QUERY` and reported as decodable (V). Unmodified Wine
   11.0 and the pre-patch runtime both reproduce the false success.
 - Patch 0043 requires PCM tags on both sides. The focused query changes from success to
-  `ACMERR_NOTPOSSIBLE`, and Wine's `msacm32` suite passes (V). Removing false codec
-  capabilities should let MSTSC build a valid client-format response for the live
-  server (I); only an audible live retest can verify F-009/T-015.
+  `ACMERR_NOTPOSSIBLE`, and Wine's `msacm32` suite passes (V). After rebuilding with the
+  patch, the previously silent real Windows session plays audio on the LMDE client
+  (operator-confirmed, V). This verifies F-009 in the tested Cinnamon environment and
+  confirms that the false codec capabilities caused the live negotiation failure.
+  T-015's explicit start/stop and runaway-process checks are still open.
