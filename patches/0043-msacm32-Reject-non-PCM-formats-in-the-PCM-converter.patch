@@ -1,4 +1,4 @@
-From cf729e2318d35a8b334e4d13a5edc99809cf4f68 Mon Sep 17 00:00:00 2001
+From 05c605943c35e9f0f4bc47d431baa9583136fc01 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Thu, 19 Nov 2026 01:22:10 -0500
 Subject: [PATCH 43/43] msacm32: Reject non-PCM formats in the PCM converter

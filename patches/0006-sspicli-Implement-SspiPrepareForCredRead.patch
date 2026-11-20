@@ -1,7 +1,7 @@
-From 732dcafe434455540cbbac26fc515de425939593 Mon Sep 17 00:00:00 2001
+From 8e78e9de1b7a157804c84ec45af9259eb03f6057 Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:10:44 -0500
-Subject: [PATCH 06/15] sspicli: Implement SspiPrepareForCredRead.
+Subject: [PATCH 06/43] sspicli: Implement SspiPrepareForCredRead.
 
 mstscax.dll (Remote Desktop client) calls it before looking up saved
 credentials for a connection target.  Return the target name copy (or

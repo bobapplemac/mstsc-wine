@@ -1,8 +1,8 @@
-From 674bad50787da87bd3119da55fec2daff060fd53 Mon Sep 17 00:00:00 2001
+From 8bfc2394d4c4a810ff586dbec2957476c498db25 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 14:08:49 -0500
-Subject: [PATCH] kerberos: Give target names without a realm the referral
- realm.
+Subject: [PATCH 24/43] kerberos: Give target names without a realm the
+ referral realm.
 
 Windows asks the user's own KDC for a service name such as "TERMSRV/host" and follows its
 referrals. Import such names with the empty realm instead of relying on a default realm,
@@ -12,7 +12,7 @@ which machines outside the domain usually do not have configured.
  1 file changed, 24 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/kerberos/unixlib.c b/dlls/kerberos/unixlib.c
-index 08a63789..d75c044c 100644
+index 08a6378..d75c044 100644
 --- a/dlls/kerberos/unixlib.c
 +++ b/dlls/kerberos/unixlib.c
 @@ -647,6 +647,29 @@ static NTSTATUS import_name( const char *src, gss_name_t *dst )

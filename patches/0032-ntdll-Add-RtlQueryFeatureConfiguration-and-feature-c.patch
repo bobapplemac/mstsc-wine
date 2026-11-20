@@ -1,7 +1,7 @@
-From 408204612e883e37debcc2434ad33b0546ac8f5e Mon Sep 17 00:00:00 2001
+From 619826c11bffa05c6c83548f22810c3fe3b643d6 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 18:09:33 -0500
-Subject: [PATCH 32/38] ntdll: Add RtlQueryFeatureConfiguration and feature
+Subject: [PATCH 32/43] ntdll: Add RtlQueryFeatureConfiguration and feature
  change notifications.
 
 Windows 10 2004+ code built with WIL looks these up in ntdll on every
@@ -17,7 +17,7 @@ Wine has no feature store: report every feature as not configured
 Windows installation without overrides. The configuration never
 changes, so change callbacks are never called.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/ntdll/ntdll.spec  |  4 +++
  dlls/ntdll/rtl.c       | 56 ++++++++++++++++++++++++++++++++++++++++++
@@ -26,7 +26,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  4 files changed, 138 insertions(+)
 
 diff --git a/dlls/ntdll/ntdll.spec b/dlls/ntdll/ntdll.spec
-index 46cd1dcc..a3bc780c 100644
+index 46cd1dc..a3bc780 100644
 --- a/dlls/ntdll/ntdll.spec
 +++ b/dlls/ntdll/ntdll.spec
 @@ -939,6 +939,8 @@
@@ -55,7 +55,7 @@ index 46cd1dcc..a3bc780c 100644
  @ stdcall -arch=!i386 RtlUnwindEx(ptr ptr ptr ptr ptr ptr)
  @ stdcall RtlUpcaseUnicodeChar(long)
 diff --git a/dlls/ntdll/rtl.c b/dlls/ntdll/rtl.c
-index b63829af..769add99 100644
+index b63829a..769add9 100644
 --- a/dlls/ntdll/rtl.c
 +++ b/dlls/ntdll/rtl.c
 @@ -1679,3 +1679,59 @@ DWORD WINAPI RtlConvertDeviceFamilyInfoToString(DWORD *device_family_size, DWORD
@@ -119,7 +119,7 @@ index b63829af..769add99 100644
 +    return STATUS_SUCCESS;
 +}
 diff --git a/dlls/ntdll/tests/rtl.c b/dlls/ntdll/tests/rtl.c
-index f5db5cdc..0f905ae8 100644
+index f5db5cd..0f905ae 100644
 --- a/dlls/ntdll/tests/rtl.c
 +++ b/dlls/ntdll/tests/rtl.c
 @@ -142,6 +142,9 @@ static NTSTATUS  (WINAPI *pRtlResetNtUserPfn)(void);
@@ -189,7 +189,7 @@ index f5db5cdc..0f905ae8 100644
      test_RtlCompareMemory();
      test_RtlCompareMemoryUlong();
 diff --git a/include/winternl.h b/include/winternl.h
-index 80c295f0..a1648d87 100644
+index 80c295f..a1648d8 100644
 --- a/include/winternl.h
 +++ b/include/winternl.h
 @@ -2821,6 +2821,39 @@ typedef struct _PROCESS_STACK_ALLOCATION_INFORMATION_EX

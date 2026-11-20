@@ -1,13 +1,13 @@
-From a5a199862e8ebe8faeaf052cc3df06be755dd913 Mon Sep 17 00:00:00 2001
+From 114b6b94b140894148a611a954cf055f1684d826 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 18:10:08 -0500
-Subject: [PATCH 37/38] winex11: Export CF_HDROP as
+Subject: [PATCH 37/43] winex11: Export CF_HDROP as
  x-special/gnome-copied-files.
 
 GTK file managers (Nautilus, Nemo, Caja) paste files from this target
 ("copy" followed by one URI per line), not from text/uri-list.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/winex11.drv/clipboard.c   | 23 ++++++++++++++++++++++-
  dlls/winex11.drv/x11drv.h      |  1 +
@@ -15,7 +15,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  3 files changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/winex11.drv/clipboard.c b/dlls/winex11.drv/clipboard.c
-index 08969f4e..d0e94871 100644
+index 08969f4..d0e9487 100644
 --- a/dlls/winex11.drv/clipboard.c
 +++ b/dlls/winex11.drv/clipboard.c
 @@ -172,6 +172,7 @@ static const struct
@@ -56,7 +56,7 @@ index 08969f4e..d0e94871 100644
      return TRUE;
  
 diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
-index 8d865467..de722f9f 100644
+index 8d86546..de722f9 100644
 --- a/dlls/winex11.drv/x11drv.h
 +++ b/dlls/winex11.drv/x11drv.h
 @@ -573,6 +573,7 @@ enum x11drv_atoms
@@ -68,7 +68,7 @@ index 8d865467..de722f9f 100644
  };
  
 diff --git a/dlls/winex11.drv/x11drv_main.c b/dlls/winex11.drv/x11drv_main.c
-index 0b8eedad..9cdba29f 100644
+index 0b8eeda..9cdba29 100644
 --- a/dlls/winex11.drv/x11drv_main.c
 +++ b/dlls/winex11.drv/x11drv_main.c
 @@ -192,7 +192,8 @@ const char * const X11DRV_atom_names[NB_XATOMS - FIRST_XATOM] =

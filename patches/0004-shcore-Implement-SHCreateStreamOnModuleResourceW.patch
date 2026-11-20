@@ -1,7 +1,7 @@
-From 95646c04646fe604608dd4911f9f440a033f563f Mon Sep 17 00:00:00 2001
+From 4944343aa589668a86599d1422d5b5f623993a44 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sat, 14 Nov 2026 08:12:44 -0500
-Subject: [PATCH 04/15] shcore: Implement SHCreateStreamOnModuleResourceW.
+Subject: [PATCH 04/43] shcore: Implement SHCreateStreamOnModuleResourceW.
 
 Also export it from shlwapi as ordinal 628, which mstsc.exe imports to
 load "Image" resources for its connection dialog. Without it the import

@@ -1,8 +1,8 @@
-From 9517148b504a82495e14694eafc2f58d43ed6c81 Mon Sep 17 00:00:00 2001
+From d9048f998be2ada49986126ca0987fb402f6f26f Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 14:08:49 -0500
-Subject: [PATCH] kerberos: Use the realm of a user principal name, in upper
- case.
+Subject: [PATCH 23/43] kerberos: Use the realm of a user principal name, in
+ upper case.
 
 A user name like "user@dns.domain" with no domain gave the principal
 "user@dns.domain@". Split it at the last '@', and upper-case the realm as Windows does.
@@ -11,7 +11,7 @@ A user name like "user@dns.domain" with no domain gave the principal
  1 file changed, 22 insertions(+), 3 deletions(-)
 
 diff --git a/dlls/kerberos/krb5_ap.c b/dlls/kerberos/krb5_ap.c
-index 27c91b26..4de82736 100644
+index 27c91b2..4de8273 100644
 --- a/dlls/kerberos/krb5_ap.c
 +++ b/dlls/kerberos/krb5_ap.c
 @@ -377,10 +377,27 @@ static char *get_str_unixcp( const UNICODE_STRING *str )

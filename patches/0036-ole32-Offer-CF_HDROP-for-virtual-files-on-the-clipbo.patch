@@ -1,7 +1,7 @@
-From 1a47782ca73272d72af10aebb591495c0b5ea4bb Mon Sep 17 00:00:00 2001
+From f011b14165d52bacc50310fb5c3f8306a4bf9496 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 18:09:56 -0500
-Subject: [PATCH 36/38] ole32: Offer CF_HDROP for virtual files on the
+Subject: [PATCH 36/43] ole32: Offer CF_HDROP for virtual files on the
  clipboard.
 
 Sources such as Remote Desktop, mail clients and archive managers put
@@ -18,13 +18,13 @@ names. Names that could leave that directory are skipped. The previous
 directory is removed on the next rendering. OLE consumers still see the
 source's own format list.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/ole32/clipboard.c | 233 +++++++++++++++++++++++++++++++++++++++++
  1 file changed, 233 insertions(+)
 
 diff --git a/dlls/ole32/clipboard.c b/dlls/ole32/clipboard.c
-index 4a9baaba..4bb2927a 100644
+index 4a9baab..4bb2927 100644
 --- a/dlls/ole32/clipboard.c
 +++ b/dlls/ole32/clipboard.c
 @@ -71,6 +71,7 @@

@@ -1,7 +1,7 @@
-From 0d498c3fadc6c0fcdf881726ef0b52ab19ef5eae Mon Sep 17 00:00:00 2001
+From 312185d15963409a065803d4f0f1ce4d6944950b Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 14:51:04 -0500
-Subject: [PATCH 26/28] comctl32/toolbar: Start list button text right after
+Subject: [PATCH 26/43] comctl32/toolbar: Start list button text right after
  the bitmap and list gap.
 
 TOOLBAR_MeasureButton() sizes a list-style button for
@@ -17,7 +17,7 @@ On Windows the text starts right after the bitmap and the list gap.
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/comctl32/toolbar.c b/dlls/comctl32/toolbar.c
-index 3826b18d..3dc53ac3 100644
+index 3826b18..3dc53ac 100644
 --- a/dlls/comctl32/toolbar.c
 +++ b/dlls/comctl32/toolbar.c
 @@ -1058,7 +1058,9 @@ TOOLBAR_DrawButton (const TOOLBAR_INFO *infoPtr, TBUTTON_INFO *btnPtr, HDC hdc,

@@ -1,7 +1,7 @@
-From 6b03ac8f90bb1e1bd7acf6a43eae2673a2db1b7b Mon Sep 17 00:00:00 2001
+From 452255f349f5160f58e182d59ebd56c38eaf72ea Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 15:10:03 -0500
-Subject: [PATCH 29/29] uxtheme: Give nested ETDT_ENABLE dialogs the texture of
+Subject: [PATCH 29/43] uxtheme: Give nested ETDT_ENABLE dialogs the texture of
  a textured parent.
 
 comctl32 marks the parent of every themed button and static with
@@ -19,7 +19,7 @@ WM_CTLCOLOR* brushes. Top-level dialogs are unchanged.
  1 file changed, 31 insertions(+), 6 deletions(-)
 
 diff --git a/dlls/uxtheme/dialog.c b/dlls/uxtheme/dialog.c
-index a27382af..185377a0 100644
+index a27382a..185377a 100644
 --- a/dlls/uxtheme/dialog.c
 +++ b/dlls/uxtheme/dialog.c
 @@ -31,7 +31,7 @@

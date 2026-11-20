@@ -1,7 +1,7 @@
-From 4ee2de256df3aa953bb7df88417dac9f0c6e7fd5 Mon Sep 17 00:00:00 2001
+From ae84989cbdb5bc9577848bf6ad8483ba27967994 Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:22:32 -0500
-Subject: [PATCH 09/15] msxml3: Implement IXMLDOMAttribute::put_nodeTypedValue
+Subject: [PATCH 09/43] msxml3: Implement IXMLDOMAttribute::put_nodeTypedValue
  for untyped attributes.
 
 Convert the value to a string and store it, as put_value does.  The

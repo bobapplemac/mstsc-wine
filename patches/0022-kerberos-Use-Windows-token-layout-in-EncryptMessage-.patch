@@ -1,8 +1,8 @@
-From ba70027e63778dc2ddbe91351630580d2f0503df Mon Sep 17 00:00:00 2001
+From 892a1ad22352a05b6309ed577dbb15a2187e4322 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 14:08:49 -0500
-Subject: [PATCH] kerberos: Use Windows' token layout in EncryptMessage and
- DecryptMessage.
+Subject: [PATCH 22/43] kerberos: Use Windows' token layout in EncryptMessage
+ and DecryptMessage.
 
 With a token and a data buffer, Windows puts the wrap token header, with the trailer
 rotated into it, in the token buffer and encrypts the data in place, so that token + data
@@ -14,7 +14,7 @@ report the real header length as the security trailer size.
  1 file changed, 83 insertions(+), 5 deletions(-)
 
 diff --git a/dlls/kerberos/unixlib.c b/dlls/kerberos/unixlib.c
-index 46665bd5..08a63789 100644
+index 46665bd..08a6378 100644
 --- a/dlls/kerberos/unixlib.c
 +++ b/dlls/kerberos/unixlib.c
 @@ -414,6 +414,7 @@ MAKE_FUNCPTR( gss_unwrap_iov );

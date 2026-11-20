@@ -1,14 +1,14 @@
-From 8f62c60667d13dee66e8956b6d994362a7554a71 Mon Sep 17 00:00:00 2001
+From ca12a4e932624404c817b8473e6b147367b9c1e7 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sat, 14 Nov 2026 12:54:06 -0500
-Subject: [PATCH 13/15] advapi32: Implement CredProtectW, CredUnprotectW and
+Subject: [PATCH 13/43] advapi32: Implement CredProtectW, CredUnprotectW and
  CredIsProtectedW.
 
 Wine has no logon-session key yet (RtlEncryptMemory is a no-op), so protected
 credentials use Windows' "@@D" prefix with an encoding of the secret but no
 encryption.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/advapi32/advapi32.spec |   6 +-
  dlls/advapi32/cred.c        | 123 ++++++++++++++++++++++++++++++++++++
