@@ -1,7 +1,7 @@
-From 7ae28dd0cb45add8c46b1b35ae0cf0598e950635 Mon Sep 17 00:00:00 2001
+From 8f5114cfcd70ee415b237d0e25f9ab9b99b19fd1 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 18:09:44 -0500
-Subject: [PATCH 34/38] user32: GetClipboardFormatNameW fails for predefined
+Subject: [PATCH 34/43] user32: GetClipboardFormatNameW fails for predefined
  formats.
 
 It forwarded straight to NtUserGetClipboardFormatName(), which returns
@@ -10,7 +10,7 @@ GetClipboardFormatNameA) return 0 for ids below 0xc000. Remote Desktop
 puts these names into its clipboard format lists, where predefined
 formats must have empty names.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/user32/clipboard.c       | 11 +++++++++++
  dlls/user32/tests/clipboard.c | 10 ++++++++++
@@ -18,7 +18,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  3 files changed, 22 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/user32/clipboard.c b/dlls/user32/clipboard.c
-index f2b6ac92..94a4641d 100644
+index f2b6ac9..94a4641 100644
 --- a/dlls/user32/clipboard.c
 +++ b/dlls/user32/clipboard.c
 @@ -553,6 +553,17 @@ UINT WINAPI RegisterClipboardFormatA( LPCSTR name )
@@ -40,7 +40,7 @@ index f2b6ac92..94a4641d 100644
   *		GetClipboardFormatNameA (USER32.@)
   */
 diff --git a/dlls/user32/tests/clipboard.c b/dlls/user32/tests/clipboard.c
-index 828d7164..8279d076 100644
+index 828d716..8279d07 100644
 --- a/dlls/user32/tests/clipboard.c
 +++ b/dlls/user32/tests/clipboard.c
 @@ -481,6 +481,16 @@ static void test_RegisterClipboardFormatA(void)
@@ -61,7 +61,7 @@ index 828d7164..8279d076 100644
      ok( ret, "OpenClipboard error %ld\n", GetLastError());
  
 diff --git a/dlls/user32/user32.spec b/dlls/user32/user32.spec
-index 16a4c6cb..866a7afb 100644
+index 16a4c6c..866a7af 100644
 --- a/dlls/user32/user32.spec
 +++ b/dlls/user32/user32.spec
 @@ -532,7 +532,7 @@

@@ -1,7 +1,7 @@
-From 5bb4daf34fb914b2b25d37090dfb2a9cd6ad1c03 Mon Sep 17 00:00:00 2001
+From 91f1333b2a3e202ae095f17870e1f8390f112cbf Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Thu, 19 Nov 2026 00:18:01 -0500
-Subject: [PATCH] ntdll: Add opt-in classic WPP diagnostics
+Subject: [PATCH 42/43] ntdll: Add opt-in classic WPP diagnostics
 
 ---
  dlls/ntdll/misc.c | 53 ++++++++++++++++++++++++++++++++++++++++++++++-

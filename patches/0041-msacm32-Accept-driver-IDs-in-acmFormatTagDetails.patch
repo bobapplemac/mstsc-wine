@@ -1,7 +1,7 @@
-From f205d75d95b50b0fa14b386ed328e1d3b0ec1b27 Mon Sep 17 00:00:00 2001
+From 46db263b30c0cb83206f28391ec041fd4b7b95da Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Wed, 18 Nov 2026 22:42:58 -0500
-Subject: [PATCH 41/41] msacm32: Accept driver IDs in acmFormatTagDetails.
+Subject: [PATCH 41/43] msacm32: Accept driver IDs in acmFormatTagDetails.
 
 ---
  dlls/msacm32/format.c      | 14 ++++++++++++++

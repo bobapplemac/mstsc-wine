@@ -1,7 +1,7 @@
-From c1938fa4487599cc2e6ee94bf930f1a915a3f722 Mon Sep 17 00:00:00 2001
+From 107943bf123fac971e9e2a4e09bc86daab2d38ac Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 14:51:04 -0500
-Subject: [PATCH 28/28] win32u: Use the v35 TrueType interpreter for Windows
+Subject: [PATCH 28/43] win32u: Use the v35 TrueType interpreter for Windows
  advance widths.
 
 Windows GDI lays text out with the advance widths of fully hinted
@@ -14,7 +14,7 @@ interpreter unless FREETYPE_PROPERTIES chooses one.
  1 file changed, 7 insertions(+), 2 deletions(-)
 
 diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
-index aeae190b..18c11f35 100644
+index aeae190..18c11f3 100644
 --- a/dlls/win32u/freetype.c
 +++ b/dlls/win32u/freetype.c
 @@ -1515,8 +1515,13 @@ static BOOL init_freetype(void)

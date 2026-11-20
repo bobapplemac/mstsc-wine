@@ -1,7 +1,7 @@
-From a435b734144c7ea04398a2d0ffa38fa2b335decc Mon Sep 17 00:00:00 2001
+From 4328e4c540307f0f728f71b7fd0be0eec0757412 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 18:09:44 -0500
-Subject: [PATCH 33/38] winex11: Flush the display after acquiring the X11
+Subject: [PATCH 33/43] winex11: Flush the display after acquiring the X11
  selection.
 
 acquire_selection() runs when the clipboard thread handles
@@ -13,13 +13,13 @@ nothing copied in a Windows application could be pasted; and when the
 buffer was finally flushed, typically by the XFixes notification for
 another client's copy, Wine took the selection back from that client.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/winex11.drv/clipboard.c | 5 +++++
  1 file changed, 5 insertions(+)
 
 diff --git a/dlls/winex11.drv/clipboard.c b/dlls/winex11.drv/clipboard.c
-index ee001563..08969f4e 100644
+index ee00156..08969f4 100644
 --- a/dlls/winex11.drv/clipboard.c
 +++ b/dlls/winex11.drv/clipboard.c
 @@ -1922,6 +1922,11 @@ static void acquire_selection( Display *display )

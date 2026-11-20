@@ -1,7 +1,7 @@
-From 2a2fe76fc05f14ae46e6f3d07627800ed0fcb2df Mon Sep 17 00:00:00 2001
+From 593babf1fa407c913e93f0cbda9500978a3bd319 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 18:09:56 -0500
-Subject: [PATCH 35/38] ole32: Report HGLOBAL storage for handle-based
+Subject: [PATCH 35/43] ole32: Report HGLOBAL storage for handle-based
  predefined clipboard formats.
 
 When the clipboard was set without OLE, the clipboard data object
@@ -11,14 +11,14 @@ reports TYMED_ISTREAM | TYMED_HGLOBAL, as for text (the CF_LOCALE check
 was todo_wine). Remote Desktop reads pictures with OleGetClipboard(), so
 pictures copied in native applications could not be pasted remotely.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/ole32/clipboard.c       |  8 +++++
  dlls/ole32/tests/clipboard.c | 67 +++++++++++++++++++++++++++++++++++-
  2 files changed, 74 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/ole32/clipboard.c b/dlls/ole32/clipboard.c
-index c5460898..4a9baaba 100644
+index c546089..4a9baab 100644
 --- a/dlls/ole32/clipboard.c
 +++ b/dlls/ole32/clipboard.c
 @@ -1197,6 +1197,14 @@ static DWORD get_tymed_from_nonole_cf(UINT cf)
@@ -37,7 +37,7 @@ index c5460898..4a9baaba 100644
      case CF_ENHMETAFILE:
          return TYMED_ENHMF;
 diff --git a/dlls/ole32/tests/clipboard.c b/dlls/ole32/tests/clipboard.c
-index 50e4e8c2..af27f9c8 100644
+index 50e4e8c..af27f9c 100644
 --- a/dlls/ole32/tests/clipboard.c
 +++ b/dlls/ole32/tests/clipboard.c
 @@ -1669,7 +1669,7 @@ static void test_nonole_clipboard(void)

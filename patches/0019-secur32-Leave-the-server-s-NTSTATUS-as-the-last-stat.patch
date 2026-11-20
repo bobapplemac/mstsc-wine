@@ -1,8 +1,8 @@
-From 7e25c732fae4de3305d3925d54fbc900d8b9f601 Mon Sep 17 00:00:00 2001
+From 6379771a8acbe71d8ad7186f5c3859ea6e0ed521 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sat, 14 Nov 2026 21:27:16 -0500
-Subject: [PATCH] secur32: Leave the server's NTSTATUS as the last status when
- CredSSP fails.
+Subject: [PATCH 19/43] secur32: Leave the server's NTSTATUS as the last status
+ when CredSSP fails.
 
 A server rejecting the delegated logon sends its NTSTATUS in
 TSRequest.errorCode (STATUS_LOGON_FAILURE for a wrong password).  Windows
@@ -12,13 +12,13 @@ report the failed logon and prompt again; anything else makes it retry the
 connection without NLA, which with a server that does not require NLA ends
 on the server's own logon screen.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/secur32/credssp.c | 7 +++++++
  1 file changed, 7 insertions(+)
 
 diff --git a/dlls/secur32/credssp.c b/dlls/secur32/credssp.c
-index bb9c4c43..eeeea0c6 100644
+index bb9c4c4..eeeea0c 100644
 --- a/dlls/secur32/credssp.c
 +++ b/dlls/secur32/credssp.c
 @@ -109,6 +109,7 @@ struct credssp_ctx

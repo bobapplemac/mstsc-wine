@@ -1,7 +1,7 @@
-From 6f3c0c524e808b286d4b8c5fe7f9abc9d409c06a Mon Sep 17 00:00:00 2001
+From 6256394021a13abd52eb34909b640bc6cb5fb537 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sat, 14 Nov 2026 12:54:06 -0500
-Subject: [PATCH 15/15] secur32: Add a CredSSP client security package.
+Subject: [PATCH 15/43] secur32: Add a CredSSP client security package.
 
 Implements the client side of [MS-CSSP] versions 2-6 on top of Schannel and
 Negotiate: TLS handshake, SPNEGO exchange, public key binding (SHA-256 with
@@ -10,7 +10,7 @@ server certificate is verified against the target host name and reported via
 SECPKG_ATTR_SERVER_AUTH_FLAGS and SECPKG_ATTR_CERT_TRUST_STATUS, which the
 Remote Desktop client uses to warn about unauthenticated servers.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/secur32/Makefile.in    |    3 +-
  dlls/secur32/credssp.c      | 1310 +++++++++++++++++++++++++++++++++++

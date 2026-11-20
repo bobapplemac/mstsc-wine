@@ -1,7 +1,7 @@
-From 28650e50cd2805aa19be1fd718abe33924bb5fd0 Mon Sep 17 00:00:00 2001
+From 8488d4a2ee1e67322b81927f85e65e5109757304 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sat, 14 Nov 2026 08:10:12 -0500
-Subject: [PATCH 03/15] user32: Implement ordinal 2598 as a no-op.
+Subject: [PATCH 03/43] user32: Implement ordinal 2598 as a no-op.
 
 mstsc.exe 10.0.20348 looks up user32 ordinal 2598 with GetProcAddress after
 making the process per-monitor DPI aware, calls it with no arguments and

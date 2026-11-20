@@ -1,7 +1,7 @@
-From fd356d4465e27365fc38b87d5f959a42d29b9509 Mon Sep 17 00:00:00 2001
+From 8950941394da5141f7d2400dbece41efc3fd7ee2 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 14:51:04 -0500
-Subject: [PATCH 27/28] server: Invalidate a child moved into an invalid part
+Subject: [PATCH 27/43] server: Invalidate a child moved into an invalid part
  of its parent.
 
 When a child window is moved or resized with its bits copied, the part
@@ -18,7 +18,7 @@ and Help buttons into the newly exposed area each time; they vanished.
  1 file changed, 31 insertions(+)
 
 diff --git a/server/window.c b/server/window.c
-index d58f643f..10a63821 100644
+index d58f643..10a6382 100644
 --- a/server/window.c
 +++ b/server/window.c
 @@ -1929,6 +1929,34 @@ static struct region *expose_window( struct window *win, const struct rectangle

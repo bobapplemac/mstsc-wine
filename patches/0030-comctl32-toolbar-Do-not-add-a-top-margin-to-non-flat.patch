@@ -1,7 +1,7 @@
-From e285f2491898890032a71c9dd33035988b4ee34c Mon Sep 17 00:00:00 2001
+From a9c16ddad114a447b692fba1a8b19db70fbb06ab Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sun, 15 Nov 2026 15:27:39 -0500
-Subject: [PATCH 30/31] comctl32/toolbar: Do not add a top margin to non-flat
+Subject: [PATCH 30/43] comctl32/toolbar: Do not add a top margin to non-flat
  toolbars in v6.
 
 comctl32 v6 lays toolbar buttons out from the top of the control
@@ -15,7 +15,7 @@ bottom edge, and its label sat 2 pixels below the Connect button's.
  1 file changed, 6 insertions(+)
 
 diff --git a/dlls/comctl32/toolbar.c b/dlls/comctl32/toolbar.c
-index 3dc53ac3..4410ad77 100644
+index 3dc53ac..4410ad7 100644
 --- a/dlls/comctl32/toolbar.c
 +++ b/dlls/comctl32/toolbar.c
 @@ -252,7 +252,13 @@ static LRESULT TOOLBAR_SetButtonInfo(TOOLBAR_INFO *infoPtr, INT Id,

@@ -1,7 +1,7 @@
-From 59a485c1420780e2a92b65e84d9c49aac6009743 Mon Sep 17 00:00:00 2001
+From 7d205bed9a869abb781a0f206dd2bbfb35632bb6 Mon Sep 17 00:00:00 2001
 From: mstsc-wine <mstsc-wine@localhost>
 Date: Sat, 14 Nov 2026 21:02:51 -0500
-Subject: [PATCH 17/18] credui: Keep generic user names as typed in the
+Subject: [PATCH 17/43] credui: Keep generic user names as typed in the
  credential dialog.
 
 The dialog completed a user name without a domain with the target name
@@ -11,13 +11,13 @@ the Remote Desktop client got back "Enter your credentials\Administrator"
 for "Administrator" and saved that name.  Only domain credentials are
 completed now.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Co-Authored-By: Andrew J. Moore <andrew@forevermoore.net>
 ---
  dlls/credui/credui_main.c | 4 +++-
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/credui/credui_main.c b/dlls/credui/credui_main.c
-index c752be0e..bb8c47bd 100644
+index c752be0..bb8c47b 100644
 --- a/dlls/credui/credui_main.c
 +++ b/dlls/credui/credui_main.c
 @@ -454,7 +454,9 @@ static void CredDialogCommandOk(HWND hwndDlg, struct cred_dialog_params *params)

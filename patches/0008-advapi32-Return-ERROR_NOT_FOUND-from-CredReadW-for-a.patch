@@ -1,7 +1,7 @@
-From 55f9fa64192af6c476ec061d69a419c6e1370186 Mon Sep 17 00:00:00 2001
+From 833f9634e95768742d42a34d7da97a5fc23c11e4 Mon Sep 17 00:00:00 2001
 From: "Andrew J. Moore" <andrew@forevermoore.net>
 Date: Sat, 14 Nov 2026 10:22:32 -0500
-Subject: [PATCH 08/15] advapi32: Return ERROR_NOT_FOUND from CredReadW for
+Subject: [PATCH 08/43] advapi32: Return ERROR_NOT_FOUND from CredReadW for
  absent credential types.
 
 CredWriteW only stores CRED_TYPE_GENERIC and CRED_TYPE_DOMAIN_PASSWORD
