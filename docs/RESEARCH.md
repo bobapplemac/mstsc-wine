@@ -515,3 +515,25 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   (no table rebuild observed). Start mstsc after choosing the layout.
 - **Remaining (H).** Layouts not in Wine's tables but resembling one (German Neo 2) still
   get some table-guessed scancodes for character keys.
+
+## R-033 Dead keys, X input methods and key forwarding (V/I)
+
+- **Every desktop has an input method (V/I).** winex11 opens an X input method for each
+  thread. With `XMODIFIERS` unset or `@im=none` that is Xlib's built-in, compose-based
+  one, which composes dead keys (MATE without ibus, the reporter's likely setup, I). With
+  `@im=ibus`/`fcitx` it is a server. A named server that does not run means no input
+  method at all, which is why the nested test displays never composed (V).
+- **What the input methods do with keys (V, `XFilterEvent` probe).** Xlib's IM consumes
+  the dead key press and the press of the next key, puts back the result as a KeyPress
+  with keycode 0 (and clears the keycode of the consumed event), and lets releases
+  through. ibus consumes every press and release and forwards back an identical copy
+  (same serial, time, keycode) of each key it does not use, asynchronously.
+- **Wine before patch 0046 (V).** Consumed events were dropped; the keycode 0 result
+  became VK_NONAME with scancode 0. mstsc forwards only real keys, so the server received
+  the releases alone and composed nothing; a Windows client sends both keys and the
+  server composes. Windows itself reports IME-processed keys to low-level hooks with their
+  virtual key and scancode and to the window as `VK_PROCESSKEY` (ADR-0056).
+- **Upstream (V, master 2026-11).** `X11DRV_ProcessEvents` still drops filtered events.
+- **Open (I).** Composing input method servers (ibus engines with dead keys, fcitx) still
+  hide consumed keys from Windows applications. Doing better needs deciding, per key,
+  whether the server will forward it, which the XIM protocol only tells asynchronously.

@@ -1,0 +1,253 @@
+From 792c689b0ffb17c66da4aecd37ed55aa2ecc40b1 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Thu, 26 Nov 2026 10:59:25 -0500
+Subject: [PATCH] winex11: Report keys consumed by Xlib's input method as
+ processed keys.
+
+When Xlib's in-process input method consumes a key event (XFilterEvent
+returns TRUE), for instance a dead key and the key composed with it, winex11
+dropped the event: Windows applications never saw the key, only the text the
+input method produced afterwards (as a keycode 0 event with no scancode).
+Applications that forward keys, such as terminal-services clients, therefore
+sent only the key releases, and the remote side could not compose anything.
+
+On Windows, keys processed by an IME still reach low-level hooks and raw
+input, and the window receives them as VK_PROCESSKEY, so that they produce no
+characters of their own. Do the same: send consumed keys as hardware input,
+remember the key presses, and claim them in a new ImeProcessKey driver entry
+point so that win32u turns their messages into VK_PROCESSKEY. Keep a copy of
+the event, as Xlib's input method clears the keycode of the event it
+consumes. The composed text still arrives from the input method as before.
+
+Only Xlib's in-process input method ("@im=none", "@im=local" or no name, as
+Xlib itself decides) is final about consumed events. Input method servers
+such as ibus consume every key and forward back the ones they do not use, so
+their events keep the current handling.
+---
+ dlls/winex11.drv/event.c    | 13 +++++-
+ dlls/winex11.drv/init.c     |  1 +
+ dlls/winex11.drv/keyboard.c | 81 +++++++++++++++++++++++++++++++++++++
+ dlls/winex11.drv/x11drv.h   |  5 +++
+ dlls/winex11.drv/xim.c      | 28 ++++++++++++-
+ 5 files changed, 126 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
+index fdb6b635..b1c7f552 100644
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -501,7 +501,18 @@ BOOL X11DRV_ProcessEvents( DWORD mask )
+         }
+ 
+         count++;
+-        if (XFilterEvent( &event, None )) continue;
++        if (event.type == KeyPress || event.type == KeyRelease)
++        {
++            /* the input method may modify the event it consumes (Xlib's own
++             * compose handling clears the keycode), so keep the original */
++            XEvent key_event = event;
++            if (XFilterEvent( &event, None ))
++            {
++                X11DRV_FilteredKeyEvent( data->display, &key_event );
++                continue;
++            }
++        }
++        else if (XFilterEvent( &event, None )) continue;
+         if (host_window_filter_event( &event, &prev_event )) continue;
+ 
+         get_event_data( &event );
+diff --git a/dlls/winex11.drv/init.c b/dlls/winex11.drv/init.c
+index 09ef2bf8..29cdcfd5 100644
+--- a/dlls/winex11.drv/init.c
++++ b/dlls/winex11.drv/init.c
+@@ -672,6 +672,7 @@ static const struct user_driver_funcs x11drv_funcs =
+     .pToUnicodeEx = X11DRV_ToUnicodeEx,
+     .pVkKeyScanEx = X11DRV_VkKeyScanEx,
+     .pNotifyIMEStatus = X11DRV_NotifyIMEStatus,
++    .pImeProcessKey = X11DRV_ImeProcessKey,
+     .pSetIMECompositionRect = X11DRV_SetIMECompositionRect,
+     .pDestroyCursorIcon = X11DRV_DestroyCursorIcon,
+     .pSetCursor = X11DRV_SetCursor,
+diff --git a/dlls/winex11.drv/keyboard.c b/dlls/winex11.drv/keyboard.c
+index 59609a26..c76efb20 100644
+--- a/dlls/winex11.drv/keyboard.c
++++ b/dlls/winex11.drv/keyboard.c
+@@ -1435,6 +1435,87 @@ BOOL X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
+     return TRUE;
+ }
+ 
++/***********************************************************************
++ *           X11DRV_FilteredKeyEvent
++ *
++ * The X input method consumed a key event (XFilterEvent), for instance a dead key or the
++ * key composed with it; the input method delivers the resulting text separately. Only
++ * Xlib's in-process input method is final about it: input method servers also consume
++ * the keys they then forward back unchanged, which are handled as ordinary events. On
++ * Windows, keys that an IME processes still reach low-level hooks and raw input, and the
++ * window receives them as VK_PROCESSKEY. Report the key the same way: send it as hardware
++ * input and let X11DRV_ImeProcessKey claim the key press, so that it produces no
++ * characters of its own.
++ */
++void X11DRV_FilteredKeyEvent( Display *display, XEvent *xev )
++{
++    struct x11drv_thread_data *data = x11drv_thread_data();
++    XKeyEvent *event = &xev->xkey;
++    DWORD time, flags = 0;
++    WORD vkey, scan;
++    HWND hwnd;
++
++    if (xev->type != KeyPress && xev->type != KeyRelease) return;
++    if (!xim_filter_is_final()) return;
++    if (!event->keycode || event->send_event) return;  /* not a physical key */
++    if (XFindContext( display, event->window, winContext, (char **)&hwnd )) return;
++
++    pthread_mutex_lock( &kbd_mutex );
++    vkey = keyc2vkey[event->keycode];
++    scan = keyc2scan[event->keycode] & 0xff;
++    pthread_mutex_unlock( &kbd_mutex );
++    if (!(vkey & 0xff)) return;
++
++    time = EVENT_x11_time_to_win32_time( event->time );
++    if (vkey & 0x100) flags |= KEYEVENTF_EXTENDEDKEY;
++    if (xev->type == KeyRelease) flags |= KEYEVENTF_KEYUP;
++    else
++    {
++        UINT i, key = scan | (vkey & 0x100);
++
++        if (data->xim_key_count == ARRAY_SIZE(data->xim_keys))
++        {
++            memmove( data->xim_keys, data->xim_keys + 1, sizeof(data->xim_keys) - sizeof(data->xim_keys[0]) );
++            data->xim_key_count--;
++        }
++        i = data->xim_key_count++;
++        data->xim_keys[i].scan = key;
++        data->xim_keys[i].time = NtGetTickCount();
++    }
++
++    TRACE_(key)( "keycode %u consumed by the input method, vkey %#x scan %#x %s\n", event->keycode,
++                 vkey, scan, xev->type == KeyRelease ? "up" : "down" );
++    X11DRV_send_keyboard_input( hwnd, vkey & 0xff, scan, flags, time );
++}
++
++/***********************************************************************
++ *           ImeProcessKey (X11DRV.@)
++ *
++ * Claim the key presses that the X input method consumed (see X11DRV_FilteredKeyEvent).
++ */
++UINT X11DRV_ImeProcessKey( HIMC himc, UINT wparam, UINT lparam, const BYTE *state )
++{
++    struct x11drv_thread_data *data = x11drv_thread_data();
++    UINT i, key = (lparam >> 16) & 0x1ff;
++    DWORD now = NtGetTickCount();
++
++    if (!data || (lparam & 0x80000000)) return 0;  /* key releases never produce characters */
++
++    for (i = 0; i < data->xim_key_count; i++)
++    {
++        /* an entry whose key message went unclaimed (no input context) expires */
++        if (now - data->xim_keys[i].time > 2000) continue;
++        if (data->xim_keys[i].scan != key) continue;
++        /* messages arrive in order: earlier entries are stale */
++        data->xim_key_count -= i + 1;
++        memmove( data->xim_keys, data->xim_keys + i + 1, data->xim_key_count * sizeof(data->xim_keys[0]) );
++        TRACE_(key)( "vkey %#x scan %#x was consumed by the input method\n", wparam, key );
++        return 1;
++    }
++    return 0;
++}
++
++
+ /**********************************************************************
+  *		X11DRV_KEYBOARD_DetectLayout
+  *
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index de722f9f..17d9bca1 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -212,6 +212,7 @@ extern INT X11DRV_ToUnicodeEx( UINT virtKey, UINT scanCode, const BYTE *lpKeySta
+                                LPWSTR bufW, int bufW_size, UINT flags, HKL hkl );
+ extern SHORT X11DRV_VkKeyScanEx( WCHAR wChar, HKL hkl );
+ extern void X11DRV_NotifyIMEStatus( HWND hwnd, UINT status );
++extern UINT X11DRV_ImeProcessKey( HIMC himc, UINT wparam, UINT lparam, const BYTE *state );
+ extern BOOL X11DRV_SetIMECompositionRect( HWND hwnd, RECT rect );
+ extern void X11DRV_DestroyCursorIcon( HCURSOR handle );
+ extern void X11DRV_SetCursor( HWND hwnd, HCURSOR handle );
+@@ -424,6 +425,8 @@ struct x11drv_thread_data
+     struct display_state pending_state;       /* display state tracking the pending / requested state */
+     struct display_state current_state;       /* display state tracking the current X11 state */
+     unsigned long net_active_window_serial;   /* serial of last pending _NET_ACTIVE_WINDOW request */
++    struct { UINT scan; DWORD time; } xim_keys[8]; /* key presses consumed by the input method */
++    UINT     xim_key_count;
+ };
+ 
+ extern struct x11drv_thread_data *x11drv_init_thread_data(void);
+@@ -595,6 +598,7 @@ extern BOOL X11DRV_ButtonRelease( HWND hwnd, XEvent *event );
+ extern BOOL X11DRV_MotionNotify( HWND hwnd, XEvent *event );
+ extern BOOL X11DRV_EnterNotify( HWND hwnd, XEvent *event );
+ extern BOOL X11DRV_KeyEvent( HWND hwnd, XEvent *event );
++extern void X11DRV_FilteredKeyEvent( Display *display, XEvent *event );
+ extern BOOL X11DRV_KeymapNotify( HWND hwnd, XEvent *event );
+ extern BOOL X11DRV_DestroyNotify( HWND hwnd, XEvent *event );
+ extern BOOL X11DRV_SelectionRequest( HWND hWnd, XEvent *event );
+@@ -911,6 +915,7 @@ extern struct x11drv_display_device_handler desktop_handler;
+ 
+ /* XIM support */
+ extern BOOL xim_init( const WCHAR *input_style );
++extern BOOL xim_filter_is_final(void);
+ extern void xim_thread_attach( struct x11drv_thread_data *data );
+ extern BOOL xim_in_compose_mode(void);
+ extern void xim_set_result_string( HWND hwnd, const char *str, UINT count );
+diff --git a/dlls/winex11.drv/xim.c b/dlls/winex11.drv/xim.c
+index 05ef7863..755970c6 100644
+--- a/dlls/winex11.drv/xim.c
++++ b/dlls/winex11.drv/xim.c
+@@ -336,8 +336,32 @@ void X11DRV_NotifyIMEStatus( HWND hwnd, UINT status )
+ /***********************************************************************
+  *           xim_init
+  */
++static BOOL xim_in_process;
++
++/* TRUE if Xlib handles input in process (its built-in compose-based input method), the way
++ * Xlib decides it: "@im=none", "@im=local", or no "@im" name. Then XFilterEvent returning
++ * TRUE means the key was consumed; an input method server (ibus, fcitx, ...) also
++ * consumes the keys it does not want and forwards them back later. */
++BOOL xim_filter_is_final(void)
++{
++    return xim_in_process;
++}
++
++static BOOL xim_name_is_in_process( const char *modifiers )
++{
++    const char *name = modifiers ? strstr( modifiers, "@im=" ) : NULL;
++    size_t len;
++
++    if (!name) return TRUE;
++    name += 4;
++    len = strcspn( name, "@" );
++    return !len || (len == 4 && !strncmp( name, "none", 4 )) || (len == 5 && !strncmp( name, "local", 5 ));
++}
++
+ BOOL xim_init( const WCHAR *input_style )
+ {
++    const char *modifiers;
++
+     static const WCHAR offthespotW[] = {'o','f','f','t','h','e','s','p','o','t',0};
+     static const WCHAR overthespotW[] = {'o','v','e','r','t','h','e','s','p','o','t',0};
+     static const WCHAR rootW[] = {'r','o','o','t',0};
+@@ -347,11 +371,13 @@ BOOL xim_init( const WCHAR *input_style )
+         WARN("X does not support locale.\n");
+         return FALSE;
+     }
+-    if (XSetLocaleModifiers("") == NULL)
++    if ((modifiers = XSetLocaleModifiers("")) == NULL)
+     {
+         WARN("Could not set locale modifiers.\n");
+         return FALSE;
+     }
++    xim_in_process = xim_name_is_in_process( modifiers );
++    TRACE( "modifiers %s, input method in process %d\n", debugstr_a(modifiers), xim_in_process );
+ 
+     if (!wcsicmp( input_style, offthespotW ))
+         input_style_req = XIMPreeditArea | XIMStatusArea;
+-- 
+2.47.3
+

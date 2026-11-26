@@ -43,3 +43,4 @@
 0043-msacm32-Reject-non-PCM-formats-in-the-PCM-converter.patch
 0044-winex11-Match-national-characters-to-the-layout-tabl.patch
 0045-winex11-Use-XKB-key-names-for-the-scancodes-of-keys-.patch
+0046-winex11-Report-keys-consumed-by-Xlib-s-input-method-.patch

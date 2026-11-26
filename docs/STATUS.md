@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-25_
+_Last updated: 2026-11-26_
 
 ## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 ## Packaging (docs/MSTSC-Wine-Packaging-Implementation-Spec.md v1.1): P0–P6 implemented (2026-11-15)
@@ -56,6 +56,13 @@ _Last updated: 2026-11-25_
   (`tests/launch/test-keyboard.sh`) and in the regression suite
   (`tests/static/keyboard-layout`). **Confirmed live** on a Windows session with the German
   layout active: ä ö ü ß @ { typed correctly (EXP-074).
+- Dead keys (issue #1 follow-up, EXP-075, R-033): the ´/` key did nothing in the session
+  under the reporter's `apple`/`de` keymap. Xlib's input method consumed the dead key and
+  the next key, and Wine dropped them, so mstsc sent only key releases. Patch 0046
+  (ADR-0056) reports keys consumed by Xlib's in-process input method like Windows reports
+  IME-processed keys (hooks see the real key, the window gets VK_PROCESSKEY). **Confirmed
+  live**: `éáò´`âä` in a German Windows session; local dialog input unchanged. Input
+  method servers (ibus, fcitx) keep the previous handling (limitation, ADR-0056).
 - Tests: regression A/B suite (incl. CredSSP client), launcher isolation test,
   server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end
   (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize
@@ -100,7 +107,8 @@ _Last updated: 2026-11-25_
    (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 3. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
 4. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-5. Keyboard: ask the reporter to retest with patches 0044/0045. Decide whether mstsc should advertise the XKB
+5. Keyboard: ask the reporter to retest dead keys with patch 0046. Composing input method
+   servers (ibus/fcitx) still hide consumed keys (R-033). Decide whether mstsc should advertise the XKB
    layout instead of the locale's (R-032: German keyboard + English locale advertises
    00000409). Wine does not rebuild its keycode table when the XKB layout changes at run
    time (setxkbmap): characters follow, virtual keys do not (R-032).

@@ -70,7 +70,7 @@ FSC=$ROOT/artifacts/fullscreen-clip
 check "winex11: leaving fullscreen releases the pointer grab" $exp_fix "$ROOT/tests/static/fullscreen-clip/run.sh" "$W" "$FSC"
 KBD=$ROOT/artifacts/keyboard-layout
 "$ROOT/tests/static/keyboard-layout/build.sh" "$KBD" >/dev/null 2>&1 || { echo "keyboard-layout fixture build failed"; exit 1; }
-check "winex11: physical scancodes for national keys and AltGr (de Macintosh, de, us)" $exp_fix "$ROOT/tests/static/keyboard-layout/run.sh" "$W" "$KBD"
+check "winex11: physical scancodes for national keys, AltGr and dead keys under an input method (de Macintosh, de, de apple, us)" $exp_fix "$ROOT/tests/static/keyboard-layout/run.sh" "$W" "$KBD"
 DLG=$ROOT/artifacts/dialog-layout
 "$ROOT/tests/static/dialog-layout/build.sh" "$DLG" >/dev/null 2>&1 || { echo "dialog-layout fixture build failed"; exit 1; }
 check "dialog layout: toolbar label and margin, child repaint, nested tab texture, text widths, group box caption" $exp_fix "$ROOT/tests/static/dialog-layout/run.sh" "$W" "$DLG"

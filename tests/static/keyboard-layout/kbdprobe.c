@@ -6,7 +6,9 @@
  *   READY
  *   LL  down|up vk=XX scan=XX ext=0|1 inj=0|1        (WH_KEYBOARD_LL, as an RDP client hooks it)
  *   MSG WM_KEYDOWN|WM_KEYUP|WM_SYSKEYDOWN|WM_SYSKEYUP vk=XX scan=XX ext=0|1
- *   CHAR U+XXXX
+ *   CHAR U+XXXX                                   (WM_CHAR / WM_SYSCHAR)
+ *   DEAD U+XXXX                                   (WM_DEADCHAR / WM_SYSDEADCHAR)
+ *   IME msg=XXXX wp=XXXX                          (WM_IME_CHAR / composition messages)
  *   MAP vk=XX scan=XX   for every vk whose MapVirtualKey(VK_TO_VSC) is non-zero (at start)
  * The window takes focus itself so that X key events reach it. */
 #include <windows.h>
@@ -54,6 +56,17 @@ static LRESULT CALLBACK wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
         printf( "CHAR U+%04X\n", (unsigned)wp );
         fflush( stdout );
         return 0;
+    }
+    if (msg == WM_DEADCHAR || msg == WM_SYSDEADCHAR)
+    {
+        printf( "DEAD U+%04X\n", (unsigned)wp );
+        fflush( stdout );
+        return 0;
+    }
+    if (msg == WM_IME_CHAR || msg == WM_IME_COMPOSITION || msg == WM_IME_STARTCOMPOSITION)
+    {
+        printf( "IME msg=%04x wp=%04X\n", msg, (unsigned)wp );
+        fflush( stdout );
     }
     if (msg == WM_DESTROY) PostQuitMessage( 0 );
     return DefWindowProcW( hwnd, msg, wp, lp );
