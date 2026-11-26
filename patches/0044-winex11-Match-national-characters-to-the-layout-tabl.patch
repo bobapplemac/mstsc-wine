@@ -1,0 +1,47 @@
+From 54922a2e1279ed514fcfaeba770721d540b9a998 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Wed, 25 Nov 2026 23:33:40 -0500
+Subject: [PATCH 44/45] winex11: Match national characters to the layout tables
+ in a UTF-8 locale.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+X11DRV_KEYBOARD_DetectLayout() and X11DRV_InitKeyboard() both convert the
+keysyms of a keycode to single bytes to compare them with the layout tables,
+which are encoded in Latin-1 (or KOI8 and similar). When XkbTranslateKeySym()
+cannot express a keysym in one byte, as in any UTF-8 locale for every
+non-ASCII character, DetectLayout() falls back to the low byte of the keysym,
+but InitKeyboard() replaced it with 0.
+
+The layout was therefore detected correctly, but the keys with national
+characters (for instance ü, ö, ä and ß on a German keyboard) never matched
+their table entries. They got spare virtual keys and arbitrary scancodes from
+0x60 on instead of the scancodes of their positions, so applications that
+forward scancodes, such as terminal-services clients, sent the wrong keys.
+
+Use the same fallback in both places.
+---
+ dlls/winex11.drv/keyboard.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/winex11.drv/keyboard.c b/dlls/winex11.drv/keyboard.c
+index 25836fe8..c291e6e2 100644
+--- a/dlls/winex11.drv/keyboard.c
++++ b/dlls/winex11.drv/keyboard.c
+@@ -1662,8 +1662,11 @@ void X11DRV_InitKeyboard( Display *display )
+                         /* FIXME: query what keysym is used as Mode_switch, fill XKeyEvent
+                          * with appropriate ShiftMask and Mode_switch, use XLookupString
+                          * to get character in the local encoding.
++                         * Use the same fallback as X11DRV_KEYBOARD_DetectLayout, so that
++                         * national characters (for instance in a UTF-8 locale, where
++                         * they do not fit in one byte) still match the layout tables.
+                          */
+-                        ckey[i] = (keysym <= 0x7F) ? keysym : 0;
++                        ckey[i] = keysym & 0xFF;
+                     }
+ 		} else {
+ 		  ckey[i] = KEYBOARD_MapDeadKeysym(keysym);
+-- 
+2.47.3
+

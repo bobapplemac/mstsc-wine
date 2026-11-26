@@ -41,3 +41,5 @@
 0041-msacm32-Accept-driver-IDs-in-acmFormatTagDetails.patch
 0042-ntdll-Add-opt-in-classic-WPP-diagnostics.patch
 0043-msacm32-Reject-non-PCM-formats-in-the-PCM-converter.patch
+0044-winex11-Match-national-characters-to-the-layout-tabl.patch
+0045-winex11-Use-XKB-key-names-for-the-scancodes-of-keys-.patch

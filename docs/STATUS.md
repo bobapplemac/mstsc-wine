@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-19_
+_Last updated: 2026-11-25_
 
 ## Current milestone: M3 (first connection): **first interactive session achieved** (2026-11-14)
 ## Packaging (docs/MSTSC-Wine-Packaging-Implementation-Spec.md v1.1): P0–P6 implemented (2026-11-15)
@@ -46,6 +46,15 @@ _Last updated: 2026-11-19_
   formats. Patch 0043 rejects non-PCM stream tags; focused and Wine conformance tests
   pass (ADR-0053/EXP-072). The operator confirms audible remote Windows audio after a
   fresh LMDE build (EXP-073), satisfying F-009 in the tested Cinnamon environment.
+- Keyboard (first external report, EXP-074, R-032): German umlauts and AltGr characters
+  failed inside the RDP session (Apple German Macintosh layout on Debian 13 MATE) while
+  working in the local dialog. Wine gave those keys meaningless scancodes (≥ 0x60), which
+  mstsc forwards to the server unchanged. Patch 0044 (ADR-0054) fixes national
+  characters in UTF-8 locales; patch 0045 (ADR-0055) gives AltGr and other keys without a
+  scancode the scancode of their XKB key position (AltGr → 0xE038). Verified with genuine
+  mstsc against a local RDP server on German Macintosh, German and US layouts
+  (`tests/launch/test-keyboard.sh`) and in the regression suite
+  (`tests/static/keyboard-layout`). Live Windows confirmation pending.
 - Tests: regression A/B suite (incl. CredSSP client), launcher isolation test,
   server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end
   (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize
@@ -90,7 +99,11 @@ _Last updated: 2026-11-19_
    (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 3. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
 4. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-5. DPI: visually verify 100%, 125%, and 150% on Cinnamon and KDE, on both X11 and
+5. Keyboard: confirm ä ö ü ß @ | on a live Windows session (German layout) with patches
+   0044/0045, and ask the reporter to retest. Decide whether mstsc should advertise the XKB
+   layout instead of the locale's (R-032: German keyboard + English locale advertises
+   00000409).
+6. DPI: visually verify 100%, 125%, and 150% on Cinnamon and KDE, on both X11 and
    Wayland/XWayland; check dialog size, session surface, pointer coordinates, and moving
    between differently scaled monitors. Then continue keyboard and display work.
-6. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.
+7. Packaging: bundle the patched GnuTLS (`tools/build-gnutls.sh`) and `ntlm_auth` dependency; Wine Mono not needed.

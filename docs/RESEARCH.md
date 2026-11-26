@@ -472,3 +472,40 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   (operator-confirmed, V). This verifies F-009 in the tested Cinnamon environment and
   confirms that the false codec capabilities caused the live negotiation failure.
   T-015's explicit start/stop and runaway-process checks are still open.
+
+## R-032 Keyboard input from X11 through Wine to the RDP server (V/I)
+
+- **What mstsc forwards (V).** With a local RDP server logging input PDUs
+  (`tests/keyboard/server/kbd-shadow.c`), genuine mstsc on Wine sends scancode input
+  (`TS_KEYBOARD_EVENT`) for every key: the scancode and extended flag Wine put in the
+  key message, unchanged. It sends no Unicode events for ordinary typing and no fake
+  Control for AltGr. The server applies its own layout to the scancodes, so a wrong
+  scancode is a wrong key, however right the local character.
+- **Where Wine gets the scancode (V).** `winex11` builds keycode → (virtual key,
+  scancode) once (`X11DRV_InitKeyboard`, again on MappingNotify). Non-character keysyms
+  (0xFFxx) use fixed tables. Character keys are matched against Wine's built-in layout
+  tables (single-byte strings) after `X11DRV_KEYBOARD_DetectLayout` has picked the closest
+  table, and take that table's scancode. Keys that match nothing get scancodes from 0x60
+  on. Characters typed locally do not depend on any of this: `ToUnicodeEx`/XIM ask X.
+- **Two defects (V).** (1) In a UTF-8 locale every non-ASCII character failed to match
+  (ADR-0054): ü ö ä ß → 0x62 0x63 0x64 0x60 on German layouts, and similar on French,
+  Swiss, Russian, Brazilian layouts. (2) `ISO_Level3_Shift` (AltGr on most European
+  layouts) and characters missing from the table (German dead acute) had no scancode
+  at all (ADR-0055): AltGr → 0x68, not 0xE038. Both reproduce on unmodified Wine 11.0
+  (`tests/static/keyboard-layout`) and explain the report exactly: dialog fine, session
+  wrong for umlauts and AltGr characters, ASCII letters (Y, Z) fine.
+- **Keyboard layout ID (V/I).** Wine derives `GetKeyboardLayout` from the locale, not
+  from XKB (win32u `get_locale_kbd_layout`). mstsc advertises it in the client core
+  data: `00000409` under `LANG=en_US.UTF-8` or an ungenerated locale, `00000407` under
+  `de_DE.UTF-8` (V, local server). Remmina derives `00000407` from XKB instead. A user with
+  a German keyboard but an English (or C) locale therefore advertises a US layout; whether
+  the Windows server then switches the session to US depends on its configuration (I).
+  The reporter's working Y/Z suggests the session was German, consistent with a German
+  locale (H). Not changed: upstream Wine chose the locale on purpose (Winword uses the
+  value as a code page; several XKB layouts are indistinguishable from US).
+- **Apple specifics (I).** The `macbook79` model and `de(mac_nodeadkeys)` variant only
+  change keysyms; keycodes (and so XKB key names) are the standard evdev ones. Nothing
+  Apple-specific is needed once scancodes follow key positions. Kernel `hid_apple`
+  options (`iso_layout`, `swap_opt_cmd`) act before X and are invisible to Wine.
+- **Remaining (H).** Layouts not in Wine's tables but resembling one (German Neo 2) still
+  get some table-guessed scancodes for character keys.

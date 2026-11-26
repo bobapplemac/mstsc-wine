@@ -1,0 +1,122 @@
+From 14832b60d848606a69f11f5c06fac9fdf9fb0428 Mon Sep 17 00:00:00 2001
+From: mstsc-wine <mstsc-wine@localhost>
+Date: Wed, 25 Nov 2026 23:36:32 -0500
+Subject: [PATCH 45/45] winex11: Use XKB key names for the scancodes of keys
+ without one.
+
+Keys whose keysyms are neither in the non-character tables nor in the
+detected layout table got arbitrary scancodes from 0x60 on. This includes the
+right Alt key whenever it is AltGr (ISO_Level3_Shift, the default for most
+European XKB layouts) and character keys that the layout table leaves out,
+such as the dead acute key of the German layouts.
+
+Windows scancodes identify key positions, and so do the key names of the
+xkeyboard-config keycodes. Use the scancode of the key name for these keys,
+and keep arbitrary scancodes only for keys with unknown names. The virtual
+keys are unchanged, so that AltGr keeps producing characters through
+ToUnicodeEx, but applications that forward scancodes, such as
+terminal-services clients, now send the right Alt key for AltGr (with the
+extended flag), which the remote layout turns into AltGr.
+---
+ dlls/winex11.drv/keyboard.c | 62 ++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/winex11.drv/keyboard.c b/dlls/winex11.drv/keyboard.c
+index c291e6e2..59609a26 100644
+--- a/dlls/winex11.drv/keyboard.c
++++ b/dlls/winex11.drv/keyboard.c
+@@ -1547,12 +1547,49 @@ X11DRV_KEYBOARD_DetectLayout( Display *display )
+ }
+ 
+ 
++/* Windows scancode of the key with the given XKB key name, 0 if unknown.  The key
++ * names of the xkeyboard-config keycodes name physical positions, like scancodes. */
++static WORD xkb_key_name_to_scan( const char name[XkbKeyNameLength] )
++{
++    static const struct { char row[2]; WORD first, count; } rows[] =
++    {
++        { {'A','E'}, 0x02, 12 }, /* AE01-AE12: 1 to = */
++        { {'A','D'}, 0x10, 12 }, /* AD01-AD12: Q to ] */
++        { {'A','C'}, 0x1e, 11 }, /* AC01-AC11: A to ' */
++        { {'A','B'}, 0x2c, 10 }, /* AB01-AB10: Z to / */
++    };
++    static const struct { char name[XkbKeyNameLength]; WORD scan; } keys[] =
++    {
++        { "ESC",  0x01 }, { "TLDE", 0x29 }, { "AE13", 0x7d }, { "BKSP", 0x0e },
++        { "TAB",  0x0f }, { "BKSL", 0x2b }, { "AC12", 0x2b }, { "RTRN", 0x1c },
++        { "CAPS", 0x3a }, { "LFSH", 0x2a }, { "LSGT", 0x56 }, { "AB11", 0x73 },
++        { "RTSH", 0x36 }, { "LCTL", 0x1d }, { "LALT", 0x38 }, { "SPCE", 0x39 },
++        { "RALT", 0x138 }, { "RCTL", 0x11d }, { "LWIN", 0x15b }, { "RWIN", 0x15c },
++        { "COMP", 0x15d }, { "MENU", 0x15d },
++    };
++    unsigned int i, n;
++
++    for (i = 0; i < ARRAY_SIZE(rows); i++)
++    {
++        if (name[0] != rows[i].row[0] || name[1] != rows[i].row[1]) continue;
++        if (name[2] < '0' || name[2] > '9' || name[3] < '0' || name[3] > '9') break;
++        n = (name[2] - '0') * 10 + name[3] - '0';
++        if (n >= 1 && n <= rows[i].count) return rows[i].first + n - 1;
++        break;
++    }
++    for (i = 0; i < ARRAY_SIZE(keys); i++)
++        if (!strncmp( name, keys[i].name, XkbKeyNameLength )) return keys[i].scan;
++    return 0;
++}
++
++
+ /**********************************************************************
+  *		X11DRV_InitKeyboard
+  */
+ void X11DRV_InitKeyboard( Display *display )
+ {
+     XModifierKeymap *mmp;
++    XkbDescPtr xkb;
+     KeySym keysym;
+     KeyCode *kcp;
+     XKeyEvent e2;
+@@ -1803,10 +1840,32 @@ void X11DRV_InitKeyboard( Display *display )
+     } /* for */
+ #undef VKEY_IF_NOT_USED
+ 
+-    /* If some keys still lack scancodes, assign some arbitrary ones to them now */
++    /* If some keys still lack scancodes, use the position the XKB key name gives (for
++     * instance the right Alt key when it is ISO_Level3_Shift, or a key whose characters
++     * are not in the layout table), and assign some arbitrary ones to the others */
++    if ((xkb = XkbGetMap( display, 0, XkbUseCoreKbd )))
++    {
++        if (XkbGetNames( display, XkbKeyNamesMask, xkb ) != Success || !xkb->names || !xkb->names->keys)
++        {
++            XkbFreeKeyboard( xkb, 0, True );
++            xkb = NULL;
++        }
++    }
+     for (scan = 0x60, keyc = min_keycode; keyc <= max_keycode; keyc++)
+       if (keyc2vkey[keyc]&&!keyc2scan[keyc]) {
+ 	const char *ksname;
++	WORD xkb_scan;
++
++	if (xkb && keyc >= xkb->min_key_code && keyc <= xkb->max_key_code &&
++	    (xkb_scan = xkb_key_name_to_scan( xkb->names->keys[keyc].name )))
++	{
++	    TRACE_(key)("assigning scancode %03x to keycode %u (%.*s)\n", xkb_scan, keyc,
++	                XkbKeyNameLength, xkb->names->keys[keyc].name);
++	    keyc2scan[keyc] = xkb_scan;
++	    if (xkb_scan & 0x100) keyc2vkey[keyc] |= 0x100;
++	    continue;
++	}
++
+ 	keysym = XkbKeycodeToKeysym( display, keyc, 0, 0 );
+ 	ksname = XKeysymToString(keysym);
+ 	if (!ksname) ksname = "NoSymbol";
+@@ -1816,6 +1875,7 @@ void X11DRV_InitKeyboard( Display *display )
+ 	TRACE_(key)("assigning scancode %02x to unidentified keycode %u (%s)\n",scan,keyc,ksname);
+ 	keyc2scan[keyc]=scan++;
+       }
++    if (xkb) XkbFreeKeyboard( xkb, 0, True );
+ 
+     pthread_mutex_unlock( &kbd_mutex );
+ }
+-- 
+2.47.3
+
