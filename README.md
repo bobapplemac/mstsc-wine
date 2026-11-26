@@ -15,6 +15,9 @@ What works with the genuine client:
 - "Remember my password", and the "Your credentials did not work" re-prompt.
 - Fullscreen, Restore and Maximize.
 - Clipboard redirection: text, files and pictures, in both directions.
+- International keyboards: keys reach the remote session as Windows sends them, so the
+  remote keyboard layout applies (tested: German, including Apple/Macintosh layouts, with
+  umlauts, AltGr and dead keys such as ´ and ^; US).
 
 - A self-contained, relocatable package built locally from source and your own Microsoft
   files: AppDir, single-file AppImage and `.tar.zst`. It brings its own Wine, patched
@@ -29,6 +32,16 @@ Not done or not yet tested:
 - Servers that *require* NLA.
 - Kerberos with a NetBIOS domain name (`DOMAIN\user` falls back to NTLM).
 - Copying folder trees through the clipboard, and two sessions at once.
+- Dead keys (´ ` ^ …) when IBus or Fcitx is your input method (`XMODIFIERS=@im=ibus` or
+  `@im=fcitx`) *and composes accents itself*: the dead key may then do nothing in the
+  session. Without IBus/Fcitx (X's own input method, the tested case) accents work, and an
+  IBus that does not compose hands the keys through unchanged. The fix for X's own input
+  method is deliberately not applied with IBus/Fcitx: they take every key and hand the
+  unused ones back a moment later, so applying it doubled every key (tested with IBus;
+  Fcitx works the same way over XIM)
+  ([ADR-0056](docs/DECISIONS/0056-winex11-xim-consumed-keys.md)). Workaround: start mstsc
+  with X's own input method, `XMODIFIERS=@im=none mstsc` (IBus/Fcitx input, e.g. for
+  Chinese or Japanese, is then unavailable in mstsc's local dialogs).
 
 - Authoritative spec: [docs/MSTSC-Wine-Master-Specification.md](docs/MSTSC-Wine-Master-Specification.md)
 - Microsoft files you must supply: [docs/binary-acquisition.md](docs/binary-acquisition.md)

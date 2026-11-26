@@ -40,7 +40,11 @@
   remote layout must compose, as from a Windows client); an mstsc-specific workaround.
 - Limitations (V/I): with an input method server that composes (e.g. an ibus engine with
   dead keys), consumed keys still do not reach Windows applications (I; upstream Wine has
-  the same `XFilterEvent` handling). Locally, acute + space gives `'` (X's Compose table)
+  the same `XFilterEvent` handling). An ibus that does not compose forwards every key
+  back, and those keys reach mstsc and the server as before (V). Workaround for users of a
+  composing server: run mstsc with `XMODIFIERS=@im=none` (Xlib's input method, the
+  configuration patch 0046 was tested and confirmed live with); the server's own input
+  (e.g. CJK) is then unavailable in mstsc's local dialogs. Documented in README.md. Locally, acute + space gives `'` (X's Compose table)
   where Windows gives ´; unchanged and irrelevant remotely, where the server composes.
 - Risk/rollback: affects only key presses that Xlib's input method consumes, i.e. dead
   keys and compose sequences; other keys are untouched (all keyboard tests unchanged).
