@@ -507,5 +507,11 @@ CredSSP exists (ADR-0015). The certificate prompt itself works (EXP-026), includ
   change keysyms; keycodes (and so XKB key names) are the standard evdev ones. Nothing
   Apple-specific is needed once scancodes follow key positions. Kernel `hid_apple`
   options (`iso_layout`, `swap_opt_cmd`) act before X and are invisible to Wine.
+- **Live confirmation (V).** On a real Windows session the corrected scancodes type
+  ä ö ü ß, AltGr+Q → @ and AltGr+7 → { once the session's layout is German; with a US
+  session layout the same keys type their US characters, as from a Windows client.
+- **Layout switch at run time (V).** After `setxkbmap` while a Wine process runs, its
+  characters follow the new layout but its virtual keys stay those of the start-up layout
+  (no table rebuild observed). Start mstsc after choosing the layout.
 - **Remaining (H).** Layouts not in Wine's tables but resembling one (German Neo 2) still
   get some table-guessed scancodes for character keys.

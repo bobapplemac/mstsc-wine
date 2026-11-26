@@ -54,7 +54,8 @@ _Last updated: 2026-11-25_
   scancode the scancode of their XKB key position (AltGr → 0xE038). Verified with genuine
   mstsc against a local RDP server on German Macintosh, German and US layouts
   (`tests/launch/test-keyboard.sh`) and in the regression suite
-  (`tests/static/keyboard-layout`). Live Windows confirmation pending.
+  (`tests/static/keyboard-layout`). **Confirmed live** on a Windows session with the German
+  layout active: ä ö ü ß @ { typed correctly (EXP-074).
 - Tests: regression A/B suite (incl. CredSSP client), launcher isolation test,
   server-certificate warning test (`tests/security/cert-prompt/run.sh`), NLA end-to-end
   (`tests/security/credssp/run.sh`; needs `python3-pyspnego`), fullscreen Restore/Maximize
@@ -99,10 +100,10 @@ _Last updated: 2026-11-25_
    (KDE). Wine imports one X11 copy twice (two cliprdr format lists).
 3. NLA follow-ups: server with NLA *required*; Kerberos with a NetBIOS domain (`DOMAIN\user` falls back to NTLM; ADR-0026).
 4. Certificate prompt with a CA-trusted certificate (expect no prompt, flags `CREDSSP_SERVER_AUTH_CERTIFICATE`).
-5. Keyboard: confirm ä ö ü ß @ | on a live Windows session (German layout) with patches
-   0044/0045, and ask the reporter to retest. Decide whether mstsc should advertise the XKB
+5. Keyboard: ask the reporter to retest with patches 0044/0045. Decide whether mstsc should advertise the XKB
    layout instead of the locale's (R-032: German keyboard + English locale advertises
-   00000409).
+   00000409). Wine does not rebuild its keycode table when the XKB layout changes at run
+   time (setxkbmap): characters follow, virtual keys do not (R-032).
 6. DPI: visually verify 100%, 125%, and 150% on Cinnamon and KDE, on both X11 and
    Wayland/XWayland; check dialog size, session surface, pointer coordinates, and moving
    between differently scaled monitors. Then continue keyboard and display work.

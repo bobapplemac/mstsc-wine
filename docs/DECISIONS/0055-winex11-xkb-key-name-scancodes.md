@@ -35,7 +35,7 @@
   table entries (e.g. German Neo 2) still get table-guessed scancodes for some keys; an
   `ISO_Level3_Shift` bound to another key sends that key's physical scancode, as
   FreeRDP does. The keyboard layout mstsc advertises comes from Wine's locale, not from
-  XKB (R-032); that is unchanged.
+  XKB (R-032); that is unchanged. Confirmed live on a Windows session (EXP-074).
 - Risk/rollback: affects only keys that previously had meaningless scancodes ≥ 0x60.
   Roll back patch 0045 if a keymap with nonstandard key names is found to misbehave.
 - Tests: `tests/static/keyboard-layout` and `tests/launch/test-keyboard.sh`.
